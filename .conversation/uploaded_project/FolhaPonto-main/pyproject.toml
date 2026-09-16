@@ -1,0 +1,36 @@
+[project]
+name = "folha-ponto"
+version = "0.3.0"
+description = "Ponto Digital DIGEP – recebimento, conferência e arquivamento de folhas de ponto"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "openpyxl>=3.1.5",
+    "pydantic>=2.10.0",
+    "pymupdf>=1.25.0",
+    "python-multipart>=0.0.18",
+    "uvicorn>=0.32.0",
+    "Pillow>=10.0.0",
+    "pytesseract>=0.3.13",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.0.0",
+    "cryptography>=42.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["FolhaPontoBack*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

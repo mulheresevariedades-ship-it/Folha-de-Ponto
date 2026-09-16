@@ -1,0 +1,10 @@
+# Arquivos desnecessários no bundle da Vercel
+tests
+.github
+attached_assets
+screenshots
+data
+__pycache__
+*.pyc
+*.zip
+FolhaPontoBack/imgs/editadas

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1266A8" />
+    <title>Ponto Digital DIGEP</title>
+    <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="login-view hidden" id="loginView" aria-labelledby="loginTitle">
+      <div class="login-intro">
+        <div class="login-brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p class="eyebrow">UnDF · DIGEP</p>
+        <h1 id="loginTitle">Ponto Digital<br />DIGEP</h1>
+        <p>Gestão inteligente, segura e organizada de folhas de ponto.</p>
+        <div class="login-intro-note"><span class="status-dot"></span><span>Ambiente de demonstração acadêmica</span></div>
+      </div>
+      <div class="login-form-panel">
+        <div class="login-form-wrap">
+          <p class="eyebrow">Acesso ao sistema</p>
+          <h2>Bem-vindo de volta</h2>
+          <p class="login-description">Entre com seu usuário para acompanhar o processamento das folhas.</p>
+          <form id="loginForm">
+            <label>Usuário ou e-mail<input id="loginUser" type="text" autocomplete="username" placeholder="Digite seu usuário" required /></label>
+            <label>Senha<div class="password-field"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Digite sua senha" required /><button id="togglePassword" type="button" aria-label="Mostrar senha">Mostrar</button></div></label>
+            <div class="login-options"><label class="remember-option"><input type="checkbox" checked /> Lembrar acesso</label><button class="link-button" type="button">Esqueci minha senha</button></div>
+            <p class="login-error hidden" id="loginError" role="alert">Informe usuário e senha para continuar.</p>
+            <button class="primary-button login-submit" type="submit">Entrar <span>→</span></button>
+          </form>
+          <p class="login-academic-credit">Projeto acadêmico desenvolvido na disciplina Estágio Empresarial I – Engenharia de Software – UnDF – 2026.2.</p>
+        </div>
+      </div>
+    </section>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div>
+            <strong>Ponto Digital DIGEP</strong>
+            <small>DIGEP · UnDF</small>
+          </div>
+        </div>
+
+        <div class="environment-badge">
+          <span class="status-dot"></span>
+          Ambiente de demonstração
+        </div>
+
+        <nav class="nav-section" aria-label="Navegação principal">
+          <p class="nav-label">Visão geral</p>
+          <button class="nav-item active" data-view="dashboard" type="button">
+            <span class="nav-icon">⌂</span><span>Dashboard</span>
+          </button>
+          <button class="nav-item" data-view="ocr" type="button">
+            <span class="nav-icon">⌁</span><span>Conferência OCR</span>
+            <span class="nav-count">04</span>
+          </button>
+          <button class="nav-item" data-view="arquivo" type="button">
+            <span class="nav-icon">▱</span><span>Arquivo de folhas</span>
+          </button>
+          <button class="nav-item" data-view="novo-lote" type="button">
+            <span class="nav-icon">＋</span><span>Novo lote</span>
+          </button>
+        </nav>
+
+        <nav class="nav-section" aria-label="Gestão">
+          <p class="nav-label">Gestão</p>
+          <button class="nav-item" data-view="servidores" type="button">
+            <span class="nav-icon">♙</span><span>Servidores</span>
+          </button>
+          <button class="nav-item" data-view="envios" type="button">
+            <span class="nav-icon">◫</span><span>Fila de envios</span>
+            <span class="nav-count warning">07</span>
+          </button>
+          <button class="nav-item" data-view="auditoria" type="button">
+            <span class="nav-icon">◷</span><span>Auditoria</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <button class="nav-item" id="aboutButton" type="button">
+            <span class="nav-icon">ⓘ</span><span>Sobre o projeto</span>
+          </button>
+          <button class="nav-item" id="logoutButton" type="button">
+            <span class="nav-icon">↪</span><span>Sair</span>
+          </button>
+          <div class="sidebar-user">
+            <div class="avatar avatar-small">—</div>
+            <div>
+              <strong>Carregando...</strong>
+              <span>—</span>
+            </div>
+            <span class="more-icon">···</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="mobile-menu" id="mobileMenu" aria-label="Abrir menu">☰</button>
+          <div class="breadcrumb">
+            <span>UnDF</span><span class="breadcrumb-separator">/</span><strong id="breadcrumbCurrent">Dashboard</strong>
+          </div>
+          <div class="topbar-actions">
+            <label class="competency-picker">
+              <span>Competência</span>
+              <select id="competencySelect" aria-label="Selecionar competência">
+                <option value="07/2026">Julho / 2026</option>
+                <option value="06/2026">Junho / 2026</option>
+                <option value="05/2026">Maio / 2026</option>
+              </select>
+            </label>
+            <button class="icon-button notification-button" aria-label="Notificações" type="button">
+              ◌<span class="notification-dot"></span>
+            </button>
+            <div class="topbar-user">
+              <div class="avatar">—</div>
+              <div class="topbar-user-copy"><strong>Carregando...</strong><span>—</span></div>
+              <span class="chevron">⌄</span>
+            </div>
+          </div>
+        </header>
+
+        <div class="page-content">
+          <section class="view dashboard-view" id="dashboardView">
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">Gestão de Folhas de Ponto</p>
+                <h1>Gestão de Folhas de Ponto</h1>
+                <p class="heading-support">Acompanhe o recebimento, a conferência e o arquivamento da competência selecionada.</p>
+                <p class="credit-inline"><b>Desenvolvimento:</b> Jasmine de Sá Araujo <span>•</span> <b>Identidade visual:</b> Francisco Daniel Bento dos Santos e Estevão Souza Araújo</p>
+              </div>
+              <button class="primary-button" id="newBatchButton" type="button">
+                <span class="button-plus">＋</span> Novo processamento
+              </button>
+            </div>
+
+            <div class="demo-notice">
+              <div class="notice-icon">i</div>
+              <div><strong>Processamento real ativo</strong><span>Cada página enviada é separada e registrada. Quando nenhum OCR estiver disponível, o sistema informa isso sem preencher dados fictícios.</span></div>
+              <button aria-label="Fechar aviso" class="notice-close" type="button">×</button>
+            </div>
+
+            <div class="metrics-grid">
+              <article class="metric-card metric-primary">
+                <div class="metric-top"><span class="metric-label">Folhas recebidas</span><span class="metric-icon">▱</span></div>
+                <div class="metric-number">0</div>
+                <div class="metric-foot"><span class="trend up">—</span><span>vs. competência anterior</span></div>
+              </article>
+              <article class="metric-card">
+                <div class="metric-top"><span class="metric-label">Reconhecidas</span><span class="metric-icon green">✓</span></div>
+                <div class="metric-number">0</div>
+                <div class="metric-foot"><span class="trend up">0%</span><span>do total recebido</span></div>
+              </article>
+              <article class="metric-card">
+                <div class="metric-top"><span class="metric-label">Aguardando conferência</span><span class="metric-icon yellow">◷</span></div>
+                <div class="metric-number">0</div>
+                <div class="metric-foot"><span class="trend neutral">0%</span><span>precisam de atenção</span></div>
+              </article>
+              <article class="metric-card">
+                <div class="metric-top"><span class="metric-label">Baixa confiança</span><span class="metric-icon red">!</span></div>
+                <div class="metric-number">0</div>
+                <div class="metric-foot"><span class="trend down">0%</span><span>vs. competência anterior</span></div>
+              </article>
+            </div>
+
+            <div class="dashboard-grid">
+              <article class="panel processing-panel">
+                <div class="panel-heading">
+                  <div><h2>Processamento da competência</h2><p>Progresso geral das folhas recebidas</p></div>
+                  <button class="ghost-button" type="button" data-view-target="ocr">Ver conferência <span>→</span></button>
+                </div>
+                <div class="progress-summary"><strong>0%</strong><span>0 de 0 folhas reconhecidas automaticamente</span></div>
+                <div class="progress-track large"><span style="width: 0%"></span></div>
+                <div class="legend-grid">
+                  <div><span class="legend-dot blue"></span><strong>0</strong><span>Reconhecidas</span></div>
+                  <div><span class="legend-dot yellow"></span><strong>0</strong><span>Em conferência</span></div>
+                  <div><span class="legend-dot red"></span><strong>0</strong><span>Baixa confiança</span></div>
+                </div>
+                <div class="processing-divider"></div>
+                <div class="mini-stat-row">
+                  <div><span class="mini-stat-icon">◷</span><div><strong>—</strong><span>Tempo médio de processamento</span></div></div>
+                  <div><span class="mini-stat-icon archive">▤</span><div><strong>0</strong><span>Folhas arquivadas</span></div></div>
+                </div>
+              </article>
+
+              <article class="panel activity-panel">
+                <div class="panel-heading"><div><h2>Atividade recente</h2><p>Últimas ações registradas no sistema</p></div><button class="more-button" aria-label="Mais opções" type="button">···</button></div>
+                 <div class="activity-list" id="activityList"><div class="empty-inline">Nenhuma atividade registrada nesta competência.</div></div>
+                <button class="text-button" data-view-target="auditoria" type="button">Ver histórico completo <span>→</span></button>
+              </article>
+            </div>
+
+            <div class="bottom-grid">
+              <article class="panel table-panel">
+                <div class="panel-heading"><div><h2>Folhas que precisam de atenção</h2><p>Priorize os documentos com menor confiança</p></div><button class="filter-button" type="button">Filtrar <span>⌄</span></button></div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>Servidor</th><th>Matrícula</th><th>Confiança OCR</th><th>Situação</th><th></th></tr></thead>
+                     <tbody id="attentionRows"><tr><td colspan="5"><div class="empty-inline">Nenhuma folha precisa de atenção nesta competência.</div></td></tr></tbody>
+                  </table>
+                </div>
+                <button class="text-button table-footer" data-view-target="ocr" type="button">Ver todas as pendências <span>→</span></button>
+              </article>
+              <article class="panel dispatch-panel">
+                <div class="panel-heading"><div><h2>Fila de envios</h2><p>Folhas de servidores que acumulam cargo</p></div><span class="small-badge">0 pendentes</span></div>
+                 <div class="dispatch-visual"><div class="dispatch-donut"><strong>0</strong><span>folhas</span></div><div class="dispatch-copy"><div><span class="legend-dot green"></span><strong>0</strong><span>Enviadas</span></div><div><span class="legend-dot yellow"></span><strong>0</strong><span>Pendentes</span></div></div></div>
+                <button class="secondary-button full-button" data-view-target="envios" type="button">Acessar fila de envios <span>→</span></button>
+              </article>
+            </div>
+          </section>
+
+          <section class="view ocr-view hidden" id="ocrView">
+            <div class="page-heading compact-heading">
+              <div><p class="eyebrow" id="ocrEyebrow">Processamento</p><h1>Conferência de OCR</h1><p class="heading-support">Revise os dados extraídos antes de arquivar cada folha.</p></div>
+              <div class="heading-actions"><button class="secondary-button" id="backToDashboard" type="button">← Voltar ao dashboard</button><button class="primary-button" id="uploadOcrButton" type="button"><span class="button-plus">＋</span> Novo lote</button></div>
+            </div>
+            <div class="ocr-toolbar">
+              <div class="ocr-toolbar-copy"><div class="processing-live"><span class="pulse-dot"></span> OCR concluído</div><strong>0 folhas aguardando conferência</strong><span> · Atualizado agora</span></div>
+              <div class="toolbar-actions"><button class="filter-button" type="button">Todos os status <span>⌄</span></button><button class="icon-button" aria-label="Atualizar lista" type="button">↻</button></div>
+            </div>
+            <div class="ocr-layout">
+              <div class="ocr-queue panel">
+                <div class="queue-header"><div><h2>Fila de conferência</h2><p>Selecione uma folha para revisar</p></div><span class="queue-count">00</span></div>
+                <div class="queue-list" id="queueList">
+                </div>
+                <div class="queue-footer"><span><strong id="queueProgress">0</strong> de 0 selecionada</span><span class="keyboard-hint">Use ↑ ↓ para navegar</span></div>
+              </div>
+
+              <div class="ocr-review panel">
+                <div class="review-header"><div><span class="review-kicker">Folha</span><h2 id="reviewTitle">Selecione uma folha</h2><span id="reviewSubtitle">Escolha um item na fila ao lado</span></div><span class="status-pill status-gray" id="reviewStatus">—</span></div>
+                <div class="review-body">
+                  <div class="document-viewer">
+                    <div class="viewer-toolbar"><span>Visualização da folha</span><div><button type="button" aria-label="Diminuir zoom">−</button><span>100%</span><button type="button" aria-label="Aumentar zoom">＋</button><button type="button" aria-label="Tela cheia">⛶</button></div></div>
+                    <div class="paper-stage">
+                      <div class="paper">
+                        <div class="paper-brand">UnDF <span>UNIVERSIDADE DO DISTRITO FEDERAL</span></div>
+                        <h3>REGISTRO DE FREQUÊNCIA</h3>
+                        <div class="paper-rule"></div>
+                        <div class="paper-meta"><span>REFERÊNCIA: <b id="paperCompetencia">—</b></span><span>UA: <b>—</b></span><span>MATRÍCULA: <b id="paperMatricula">—</b></span></div>
+                        <div class="paper-field"><span>NOME DO SERVIDOR:</span><b id="paperName">SELECIONE UMA FOLHA</b></div>
+                        <div class="paper-fields-row"><span>CARGO: <b>—</b></span><span>PADRÃO: <b>—</b></span></div>
+                        <div class="paper-field"><span>EXERCÍCIO:</span><b>—</b></div>
+                        <div class="paper-calendar"><div class="calendar-head"><span>DIA</span><span>ENTRADA</span><span>SAÍDA</span><span>ENTRADA</span><span>SAÍDA</span></div><div class="calendar-row faded"><span>...</span><span>...</span><span>...</span><span>...</span><span>...</span></div></div>
+                        <div class="paper-signature"><span>Observações:</span><div></div><div></div></div>
+                        <div class="paper-footer">Documento demonstrativo · visualização protegida</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="recognized-data">
+                    <div class="recognized-heading"><div><h3>Dados reconhecidos</h3><span>Revise e confirme a associação</span></div><button class="confidence-info" type="button">i Confiança OCR</button></div>
+                    <div class="confidence-card"><div class="confidence-card-top"><span>Confiança geral</span><strong id="confidenceValue">0%</strong></div><div class="progress-track"><span id="confidenceProgress" style="width: 0%"></span></div><p id="confidenceMessage">Selecione uma folha para revisar.</p></div>
+                    <form class="data-form" id="ocrForm">
+                      <label>Matrícula <span class="field-confidence"></span><input id="matriculaInput" value="" /></label>
+                      <label>Nome do servidor <span class="field-confidence"></span><input id="nameInput" value="" /></label>
+                      <label>Competência <span class="field-confidence"></span><input id="competenciaInput" value="" /></label>
+                      <label>Servidor associado<select id="employeeSelect"><option value="">Selecione um servidor</option></select></label>
+                      <label>Observação <span class="optional-label">opcional</span><textarea id="noteInput" placeholder="Adicione uma observação sobre esta conferência..."></textarea></label>
+                    </form>
+                    <div class="association-check"><span class="check-icon">✓</span><div><strong>Servidor identificado</strong><span>Matrícula e nome conferem com o cadastro.</span></div></div>
+                  </div>
+                </div>
+                <div class="review-footer"><button class="danger-text-button" id="rejectButton" type="button">Rejeitar processamento</button><div><button class="secondary-button" id="pendingButton" type="button">Encaminhar para pendência</button><button class="primary-button" id="confirmButton" type="button">Confirmar e arquivar <span>→</span></button></div></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="view arquivo-view hidden" id="arquivoView">
+            <div class="page-heading compact-heading">
+              <div><p class="eyebrow">Gestão · Arquivo</p><h1>Arquivo de folhas</h1><p class="heading-support">Consulte todas as folhas processadas e arquivadas por competência.</p></div>
+              <button class="secondary-button" data-view-target="dashboard" type="button">← Dashboard</button>
+            </div>
+            <div class="panel table-panel">
+              <div class="panel-heading">
+                <div><h2>Folhas arquivadas</h2><p>Todas as folhas processadas na competência selecionada</p></div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                  <input id="archiveSearchInput" type="text" placeholder="Buscar por nome ou matrícula..." style="border:1px solid var(--line); border-radius:7px; padding:8px 12px; font-size:12px; outline:0; min-width:220px;" />
+                  <select id="archiveStatusFilter" style="border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-size:12px; outline:0; background:#fff;">
+                    <option value="todos">Todos os status</option>
+                    <option value="arquivada">Arquivadas</option>
+                    <option value="reconhecida">Reconhecidas</option>
+                    <option value="revisao">Em revisão</option>
+                    <option value="pendente">Pendentes</option>
+                    <option value="baixa_confianca">Baixa confiança</option>
+                    <option value="rejeitada">Rejeitadas</option>
+                  </select>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>ID</th><th>Servidor</th><th>Matrícula</th><th>Competência</th><th>Situação</th><th>Confiança</th></tr></thead>
+                  <tbody id="archiveTableBody"><tr><td colspan="6"><div class="empty-inline">Carregando...</div></td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="view envios-view hidden" id="enviosView">
+            <div class="page-heading compact-heading">
+              <div><p class="eyebrow">Gestão · Envios</p><h1>Fila de envios</h1><p class="heading-support">Gerencie o despacho de e-mails para servidores que acumulam cargo.</p></div>
+              <button class="secondary-button" data-view-target="dashboard" type="button">← Dashboard</button>
+            </div>
+            <div class="panel table-panel">
+              <div class="panel-heading">
+                <div><h2>Despachos de e-mail</h2><p>Envios pendentes, concluídos e com erro</p></div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                  <select id="dispatchStatusFilter" style="border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-size:12px; outline:0; background:#fff;">
+                    <option value="todos">Todos os status</option>
+                    <option value="pendente">Pendentes</option>
+                    <option value="enviado">Enviados</option>
+                    <option value="erro">Com erro</option>
+                  </select>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>ID</th><th>Servidor</th><th>Matrícula</th><th>Status</th><th>Data</th><th>Erro</th><th>Ações</th></tr></thead>
+                  <tbody id="dispatchesTableBody"><tr><td colspan="7"><div class="empty-inline">Carregando...</div></td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="view servidores-view hidden" id="servidoresView">
+            <div class="page-heading compact-heading">
+              <div><p class="eyebrow">Gestão · Servidores</p><h1>Servidores</h1><p class="heading-support">Consulte e importe dados de servidores para associação com folhas de ponto.</p></div>
+              <div class="heading-actions"><button class="secondary-button" data-view-target="dashboard" type="button">← Dashboard</button><button class="primary-button" data-view-target="servidores" type="button" onclick="document.getElementById('employeeImportPanel').classList.toggle('hidden')"><span class="button-plus">＋</span> Importar planilha</button></div>
+            </div>
+            <div class="panel table-panel">
+              <div class="panel-heading"><div><h2>Servidores cadastrados</h2><p>Lista de todos os servidores importados</p></div></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>ID</th><th>Nome</th><th>Matrícula</th><th>CPF</th><th>E-mail</th><th>Carga Horária</th></tr></thead>
+                  <tbody id="employeesTableBody"><tr><td colspan="6"><div class="empty-inline">Carregando...</div></td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="module-panel hidden" id="employeeImportPanel">
+              <div class="panel import-card">
+                <form id="employeeImportForm" class="import-form">
+                  <label>Planilha de servidores<input id="employeeImportFile" type="file" accept=".csv,.xlsx" required /><span>Colunas: Nome, Matrícula, CPF, E-mail, Carga Horária e Acumula cargo (Sim/Não).</span></label>
+                  <button class="primary-button" type="submit">Validar planilha</button>
+                </form>
+                <div class="import-result hidden" id="employeeImportResult"><div class="import-summary" id="employeeImportSummary"></div><div class="import-errors" id="employeeImportErrors"></div><button class="primary-button hidden" id="confirmEmployeeImport" type="button">Confirmar linhas válidas</button></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="view auditoria-view hidden" id="auditoriaView">
+            <div class="page-heading compact-heading">
+              <div><p class="eyebrow">Gestão · Auditoria</p><h1>Auditoria</h1><p class="heading-support">Histórico de ações realizadas nas folhas de ponto.</p></div>
+              <button class="secondary-button" data-view-target="dashboard" type="button">← Dashboard</button>
+            </div>
+            <div class="panel table-panel">
+              <div class="panel-heading"><div><h2>Registro de auditoria</h2><p>Todas as conferências e alterações registradas</p></div></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>ID Folha</th><th>Servidor</th><th>Situação</th><th>Competência</th><th>Data</th></tr></thead>
+                  <tbody id="auditoriaTableBody"><tr><td colspan="5"><div class="empty-inline">Carregando...</div></td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="view novo-lote-view hidden" id="novo-loteView">
+            <div class="page-heading compact-heading">
+              <div><p class="eyebrow">Processamento · Novo lote</p><h1>Receber folhas de ponto</h1><p class="heading-support">O PDF será separado por página e cada folha terá seu próprio resultado.</p></div>
+              <button class="secondary-button" data-view-target="dashboard" type="button">← Dashboard</button>
+            </div>
+            <div class="panel batch-drop-card"><div class="batch-drop-icon">↑</div><h2>Envie o arquivo do lote</h2><p>PDF, PNG ou JPG até 20 MB. O arquivo original permanece em armazenamento privado.</p><button class="primary-button" id="newBatchModuleButton" type="button">Selecionar arquivo</button><p class="batch-note">Sem OCR instalado, cada página ficará marcada como "OCR indisponível" para conferência manual.</p></div>
+          </section>
+
+          <div class="academic-credit-strip">
+            <div class="academic-credit-title"><span class="about-mark-small">PD</span><div><strong>Projeto acadêmico · 2026.2</strong><span>Estágio Empresarial I · Engenharia de Software · UnDF</span></div></div>
+            <div class="academic-credit-people"><span><b>Desenvolvimento do sistema</b> Jasmine de Sá Araujo</span><span><b>Identidade visual</b> Francisco Daniel Bento dos Santos e Estevão Souza Araújo</span></div>
+          </div>
+          <footer class="system-footer">Ponto Digital DIGEP <span>•</span> Estágio Empresarial I <span>•</span> UnDF <span>•</span> 2026.2</footer>
+        </div>
+      </main>
+    </div>
+    <div class="about-modal hidden" id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+      <div class="about-card">
+        <button class="about-close" id="aboutClose" aria-label="Fechar" type="button">×</button>
+        <div class="about-mark">PD</div>
+        <p class="eyebrow">Sobre o projeto</p>
+        <h2 id="aboutTitle">Ponto Digital DIGEP</h2>
+        <p class="about-subtitle">Sistema de Gestão de Folhas de Ponto</p>
+        <p>Projeto acadêmico desenvolvido durante o período letivo 2026.2, na disciplina Estágio Empresarial I do curso de Engenharia de Software da Universidade do Distrito Federal Professor Jorge Amaury Maia Nunes – UnDF.</p>
+        <div class="credit-block">
+          <strong>Desenvolvimento do sistema</strong>
+          <span>Jasmine de Sá Araujo</span>
+          <strong>Identidade visual</strong>
+          <span>Francisco Daniel Bento dos Santos</span>
+          <span>Estevão Souza Araújo</span>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="batchFileInput" accept=".pdf,.png,.jpg,.jpeg" hidden />
+    <div class="toast" id="toast" role="status"><span class="toast-icon">✓</span><span id="toastMessage">Ação concluída.</span></div>
+    <script src="app.js"></script>
+  </body>
+</html>

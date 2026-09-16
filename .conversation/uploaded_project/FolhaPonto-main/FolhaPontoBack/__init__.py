@@ -1,0 +1,1 @@
+"""Componentes de processamento do Ponto Digital DIGEP."""

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Ponto Digital DIGEP"
+description = "Sistema web para recebimento, conferência OCR, arquivamento e acompanhamento de folhas de ponto da DIGEP."
+version = "1.0.0"
+id = "artifacts/ponto-digital"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24541
+
+[services.development]
+run = "pnpm --filter @workspace/ponto-digital run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ponto-digital", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ponto-digital/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24541"
+BASE_PATH = "/"

@@ -1,0 +1,26 @@
+FolhaPontoWeb
+FolhaPontoMobile
+FolhaPontoBack/.venv
+FolhaPontoBack/imgs/editadas/*
+output
+data/
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Artefatos de projeto (dados, scans, prompts)
+attached_assets/*.pdf
+attached_assets/*.zip
+attached_assets/*.png
+attached_assets/*.txt
+attached_assets/*.xlsx
+attached_assets/*.docx
+
+# Dados gerados em runtime
+*.sqlite3
+*.db
+uploads/
+
+.pytest_cache/
+*.egg-info/
