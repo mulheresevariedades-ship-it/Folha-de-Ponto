@@ -104,9 +104,10 @@ interface User {
 const queryClient = new QueryClient();
 
 async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const isMultipart = typeof FormData !== 'undefined' && options?.body instanceof FormData;
   const response = await fetch(`/api${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+    headers: isMultipart ? options?.headers : { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { message?: string };
@@ -427,7 +428,10 @@ function App() {
     }
     if (apiOnline) {
       try {
-        const result = await apiRequest<{ id: string }>('/batches', { method: 'POST', body: JSON.stringify({ filename: batchFile.name, competency }) });
+        const formData = new FormData();
+        formData.append('file', batchFile);
+        formData.append('competency', competency);
+        const result = await apiRequest<{ id: string }>('/batches', { method: 'POST', body: formData });
         await refreshFromApi();
         setBatchFile(null);
         if (batchInputRef.current) batchInputRef.current.value = '';
@@ -457,7 +461,9 @@ function App() {
       return;
     }
     if (!importFile.name.toLowerCase().endsWith('.csv')) {
-      announce('A prévia automática está disponível para arquivos CSV.');
+      setImportRows([]);
+      setImportPreview(true);
+      announce('Arquivo XLSX pronto para validação no servidor. Confirme para importar.');
       return;
     }
     const lines = (await importFile.text()).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -493,9 +499,11 @@ function App() {
   const confirmImport = async () => {
     if (apiOnline) {
       try {
-        await apiRequest('/employees/import', {
+        const formData = new FormData();
+        formData.append('file', importFile ?? new Blob(), importFile?.name ?? 'import.csv');
+        await apiRequest('/employees/import-file', {
           method: 'POST',
-          body: JSON.stringify(importRows),
+          body: formData,
         });
         await refreshFromApi();
         setImportPreview(false);

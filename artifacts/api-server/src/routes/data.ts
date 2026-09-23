@@ -1,9 +1,16 @@
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { Router, type IRouter } from "express";
+import multer from "multer";
+import * as XLSX from "xlsx";
 import { auditEvents, batches, db, dispatches, employees, timesheets } from "@workspace/db";
 
 const router: IRouter = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const uploadDirectory = path.resolve(process.env.PONTO_DATA_DIR ?? "data", "uploads");
+mkdirSync(uploadDirectory, { recursive: true });
 
 const statusLabels: Record<string, string> = {
   reconhecida: "Reconhecida",
@@ -23,21 +30,29 @@ async function audit(action: string, entityType: string, entityId: string, metad
   await db.insert(auditEvents).values({ action, entityType, entityId, metadata });
 }
 
-router.post("/batches", async (req, res, next) => {
+router.post("/batches", upload.single("file"), async (req, res, next) => {
   try {
-    const { filename, competency } = req.body as { filename?: string; competency?: string };
-    if (!filename || !competency) {
-      res.status(400).json({ message: "filename e competency são obrigatórios" });
+    const { competency } = req.body as { competency?: string };
+    const file = req.file;
+    if (!file || !competency) {
+      res.status(400).json({ message: "file e competency são obrigatórios" });
+      return;
+    }
+    const extension = path.extname(file.originalname).toLowerCase();
+    if (!['.pdf', '.png', '.jpg', '.jpeg'].includes(extension)) {
+      res.status(415).json({ message: "Formato de arquivo não suportado" });
       return;
     }
 
     const reference = `F-${Date.now().toString().slice(-7)}`;
-    const fileHash = `${filename}-${Date.now()}`;
+    const fileHash = createHash("sha256").update(file.buffer).digest("hex");
+    const storedName = `${fileHash}${extension}`;
+    writeFileSync(path.join(uploadDirectory, storedName), file.buffer);
     const [batch] = await db.insert(batches).values({
-      originalFilename: filename,
-      storagePath: `pending/${fileHash}`,
+      originalFilename: file.originalname,
+      storagePath: path.join(uploadDirectory, storedName),
       fileHash,
-      mimeType: "application/octet-stream",
+      mimeType: file.mimetype,
       pageCount: 1,
     }).returning({ id: batches.id });
     const [sheet] = await db.insert(timesheets).values({
@@ -47,10 +62,44 @@ router.post("/batches", async (req, res, next) => {
       confidence: 0,
       status: "ocr_indisponivel",
       statusLabel: statusLabels.ocr_indisponivel,
-      note: `Lote recebido: ${filename}`,
+      note: `Lote recebido: ${file.originalname}`,
     }).returning({ id: timesheets.id, reference: timesheets.reference });
-    await audit("lote_recebido", "timesheet", sheet.id, { filename, competency });
+    await audit("lote_recebido", "timesheet", sheet.id, { filename: file.originalname, competency });
     res.status(201).json({ id: sheet.reference, batch_id: batch.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/employees/import-file", upload.single("file"), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ message: "file é obrigatório" });
+      return;
+    }
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const valueFor = (record: Record<string, unknown>, names: string[]) => {
+      const key = Object.keys(record).find((candidate) => names.includes(normalize(candidate)));
+      return key ? String(record[key]).trim() : "";
+    };
+    const input = records.map((record) => ({
+      name: valueFor(record, ["nome", "name"]),
+      matricula: valueFor(record, ["matricula", "registration"]),
+      cpfLastDigits: valueFor(record, ["cpf", "ultimos digitos do cpf"]).slice(-2) || undefined,
+      email: valueFor(record, ["email", "e-mail"]) || undefined,
+      workloadHours: Number(valueFor(record, ["carga horaria", "workload"])) || 40,
+      accumulatesRole: ["sim", "true", "1", "yes"].includes(valueFor(record, ["acumula", "acumula cargo", "accumulates"]).toLowerCase()),
+    })).filter((employee) => employee.name && employee.matricula);
+    if (!input.length) {
+      res.status(422).json({ message: "Nenhuma linha válida encontrada. Use as colunas Nome e Matrícula." });
+      return;
+    }
+    const rows = await db.insert(employees).values(input).onConflictDoUpdate({ target: employees.matricula, set: { name: sql`excluded.name`, email: sql`excluded.email`, workloadHours: sql`excluded.workload_hours`, accumulatesRole: sql`excluded.accumulates_role` } }).returning({ id: employees.id });
+    await audit("servidores_importados", "employee", randomUUID(), { count: rows.length, filename: req.file.originalname });
+    res.status(201).json({ imported: rows.length });
   } catch (error) {
     next(error);
   }
