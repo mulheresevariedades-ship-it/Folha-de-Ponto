@@ -94,6 +94,18 @@ interface User {
 
 const queryClient = new QueryClient();
 
+async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`/api${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { message?: string };
+    throw new Error(body.message ?? `Falha na API (${response.status})`);
+  }
+  return response.json() as Promise<T>;
+}
+
 const statusLabels: Record<Status, string> = {
   reconhecida: 'Reconhecida',
   arquivada: 'Arquivada',
@@ -213,6 +225,7 @@ function App() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState(false);
   const [batchFile, setBatchFile] = useState<File | null>(null);
+  const [apiOnline, setApiOnline] = useState(false);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const employeeInputRef = useRef<HTMLInputElement>(null);
 
@@ -268,6 +281,31 @@ function App() {
     }
   }, [selectedQueue, competency]);
 
+  useEffect(() => {
+    if (!authenticated) return;
+    let cancelled = false;
+    const loadData = async () => {
+      try {
+        const [sheetRows, employeeRows, dispatchRows, auditRows] = await Promise.all([
+          apiRequest<Timesheet[]>(`/timesheets?competency=${encodeURIComponent(competency)}`),
+          apiRequest<Employee[]>('/employees'),
+          apiRequest<Dispatch[]>('/dispatches'),
+          apiRequest<AuditItem[]>('/audit'),
+        ]);
+        if (cancelled) return;
+        setTimesheets(sheetRows);
+        setEmployees(employeeRows);
+        setDispatches(dispatchRows);
+        setAudit(auditRows.map((item) => ({ ...item, date: item.date ?? new Date().toISOString() })));
+        setApiOnline(true);
+      } catch {
+        if (!cancelled) setApiOnline(false);
+      }
+    };
+    void loadData();
+    return () => { cancelled = true; };
+  }, [authenticated, competency]);
+
   const navigate = (nextView: View) => {
     setView(nextView);
     setMobileOpen(false);
@@ -311,7 +349,20 @@ function App() {
     }
   };
 
-  const reviewAction = (action: 'confirm' | 'pending' | 'reject') => {
+  const refreshFromApi = async () => {
+    const [sheetRows, employeeRows, dispatchRows, auditRows] = await Promise.all([
+      apiRequest<Timesheet[]>(`/timesheets?competency=${encodeURIComponent(competency)}`),
+      apiRequest<Employee[]>('/employees'),
+      apiRequest<Dispatch[]>('/dispatches'),
+      apiRequest<AuditItem[]>('/audit'),
+    ]);
+    setTimesheets(sheetRows);
+    setEmployees(employeeRows);
+    setDispatches(dispatchRows);
+    setAudit(auditRows);
+  };
+
+  const reviewAction = async (action: 'confirm' | 'pending' | 'reject') => {
     if (!selectedQueue) {
       announce('Selecione uma folha para continuar.');
       return;
@@ -319,6 +370,21 @@ function App() {
     const nextStatus: Status = action === 'confirm' ? 'arquivada' : action === 'pending' ? 'pendente' : 'rejeitada';
     const nextLabel = statusLabels[nextStatus];
     const date = new Date().toISOString();
+    if (apiOnline) {
+      try {
+        await apiRequest(`/timesheets/${encodeURIComponent(selectedQueue.id)}/review`, {
+          method: 'PATCH',
+          body: JSON.stringify({ action, name: draftName, matricula: draftMatricula, competency: draftCompetencia, note: draftNote }),
+        });
+        await refreshFromApi();
+        announce(`${draftName.trim() || selectedQueue.name} atualizado: ${nextLabel}.`);
+        setSelectedQueueId(null);
+        return;
+      } catch (error) {
+        announce(error instanceof Error ? error.message : 'Não foi possível salvar a revisão.');
+        return;
+      }
+    }
     setTimesheets((rows) => rows.map((row) => row.id === selectedQueue.id ? {
       ...row,
       name: draftName.trim() || 'Servidor não identificado',
@@ -334,10 +400,25 @@ function App() {
     setSelectedQueueId(null);
   };
 
-  const processBatch = () => {
+  const processBatch = async () => {
     if (!batchFile) {
       announce('Selecione um arquivo para iniciar o lote.');
       return;
+    }
+    if (apiOnline) {
+      try {
+        const result = await apiRequest<{ id: string }>('/batches', { method: 'POST', body: JSON.stringify({ filename: batchFile.name, competency }) });
+        await refreshFromApi();
+        setBatchFile(null);
+        if (batchInputRef.current) batchInputRef.current.value = '';
+        setSelectedQueueId(result.id);
+        navigate('ocr');
+        announce(`Lote recebido. ${batchFile.name} foi encaminhado para conferência manual.`);
+        return;
+      } catch (error) {
+        announce(error instanceof Error ? error.message : 'Não foi possível receber o lote.');
+        return;
+      }
     }
     const nextId = `F-${1050 + timesheets.length}`;
     const newRow: Timesheet = { id: nextId, name: 'Servidor não identificado', matricula: null, competencia: competency, confidence: 0, status: 'ocr_indisponivel', status_label: statusLabels.ocr_indisponivel, reviewed_at: null, note: `Lote manual: ${batchFile.name}` };
@@ -359,7 +440,24 @@ function App() {
     announce('Prévia validada: 4 linhas prontas e 1 linha para correção.');
   };
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
+    if (apiOnline) {
+      try {
+        await apiRequest('/employees/import', {
+          method: 'POST',
+          body: JSON.stringify([{ name: 'Rafael Moura', matricula: '2026099', cpfLastDigits: '67', email: 'rafael.moura@undf.edu.br', workloadHours: 40, accumulatesRole: false }]),
+        });
+        await refreshFromApi();
+        setImportPreview(false);
+        setImportFile(null);
+        if (employeeInputRef.current) employeeInputRef.current.value = '';
+        announce('Importação concluída e salva no banco de dados.');
+        return;
+      } catch (error) {
+        announce(error instanceof Error ? error.message : 'Não foi possível importar os servidores.');
+        return;
+      }
+    }
     const newEmployee: Employee = { id: 20, name: 'Rafael Moura', matricula: '2026099', cpf: '***.***.***-67', email: 'rafael.moura@undf.edu.br', carga_horaria: 40, acumula: false };
     setEmployees((rows) => [...rows, newEmployee]);
     setImportPreview(false);
@@ -368,17 +466,50 @@ function App() {
     announce('Importação concluída: 4 servidores adicionados ao cadastro.');
   };
 
-  const authorizeDispatch = (id: number) => {
+  const authorizeDispatch = async (id: number) => {
+    if (apiOnline) {
+      try {
+        await apiRequest(`/dispatches/${id}/authorize`, { method: 'PATCH' });
+        await refreshFromApi();
+        announce('Despacho autorizado. O envio simulado está liberado.');
+        return;
+      } catch (error) {
+        announce(error instanceof Error ? error.message : 'Não foi possível autorizar o despacho.');
+        return;
+      }
+    }
     setDispatches((items) => items.map((item) => item.id === id ? { ...item, authorized_at: new Date().toISOString() } : item));
     announce('Despacho autorizado. O envio simulado está liberado.');
   };
 
-  const simulateSend = (id: number) => {
+  const simulateSend = async (id: number) => {
+    if (apiOnline) {
+      try {
+        await apiRequest(`/dispatches/${id}/send`, { method: 'PATCH' });
+        await refreshFromApi();
+        announce('Envio simulado com sucesso. Nenhuma mensagem real foi enviada.');
+        return;
+      } catch (error) {
+        announce(error instanceof Error ? error.message : 'Não foi possível simular o envio.');
+        return;
+      }
+    }
     setDispatches((items) => items.map((item) => item.id === id ? { ...item, status: 'enviado', sent_at: new Date().toISOString(), error_message: null } : item));
     announce('Envio simulado com sucesso. Nenhuma mensagem real foi enviada.');
   };
 
-  const resendDispatch = (id: number) => {
+  const resendDispatch = async (id: number) => {
+    if (apiOnline) {
+      try {
+        await apiRequest(`/dispatches/${id}/resend`, { method: 'PATCH' });
+        await refreshFromApi();
+        announce('Despacho devolvido para a fila de autorização.');
+        return;
+      } catch (error) {
+        announce(error instanceof Error ? error.message : 'Não foi possível reenviar o despacho.');
+        return;
+      }
+    }
     setDispatches((items) => items.map((item) => item.id === id ? { ...item, status: 'pendente', error_message: null, sent_at: null, authorized_at: null } : item));
     announce('Despacho devolvido para a fila de autorização.');
   };
