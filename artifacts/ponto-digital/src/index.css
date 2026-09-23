@@ -370,6 +370,13 @@ tbody tr:hover { background: #fcfaf3; }
 .modal-card > p:not(.eyebrow) { color: #657671; line-height: 1.7; font-size: 11px; }
 .credit-block { display: grid; gap: 4px; border-left: 3px solid #bd6e47; background: #f6f3eb; padding: 12px 14px; color: #536b69; font-size: 10px; }
 .credit-block strong { color: #3d756b; margin-top: 4px; }
+.modal-card { max-height: min(88vh, 760px); overflow-y: auto; }
+.project-principles { display: grid; gap: 14px; margin: 18px 0; color: #536b69; font-size: 10px; line-height: 1.65; }
+.project-principles section { border-top: 1px solid #e6e2d8; padding-top: 10px; }
+.project-principles h3 { color: #3d756b; font-size: 12px; margin: 0 0 4px; }
+.project-principles p { margin: 0; }
+.project-principles ul { display: grid; gap: 4px; margin: 0; padding-left: 16px; }
+.project-principles li::marker { color: #bd6e47; }
 .toast { position: fixed; right: 24px; bottom: 23px; z-index: 40; display: flex; align-items: center; gap: 9px; max-width: min(360px, calc(100vw - 32px)); border-radius: 8px; padding: 12px 14px; color: #fff8eb; background: #234c54; box-shadow: var(--shadow-lift); font-size: 11px; transform: translateY(140%); opacity: 0; transition: transform .22s, opacity .22s; }
 .toast.visible { transform: translateY(0); opacity: 1; }
 .toast-icon { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: #4f927e; color: #fff; font-size: 10px; }
