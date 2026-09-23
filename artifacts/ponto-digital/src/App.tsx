@@ -93,6 +93,7 @@ interface User {
 }
 
 const queryClient = new QueryClient();
+const DEMO_PASSWORD = '123456';
 
 async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
@@ -313,8 +314,12 @@ function App() {
 
   const handleLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!loginUser.trim() || !loginPassword.trim()) {
-      setLoginError('Informe usuário e senha para continuar.');
+    if (!loginUser.trim()) {
+      setLoginError('Informe o usuário para continuar.');
+      return;
+    }
+    if (loginPassword !== DEMO_PASSWORD) {
+      setLoginError('Senha inválida. Use a senha de demonstração 123456.');
       return;
     }
     setLoginError('');
@@ -534,7 +539,7 @@ function App() {
             <div className="login-card">
               <p className="eyebrow">Acesso ao sistema</p>
               <h2>Bom trabalho por aqui.</h2>
-              <p className="login-description">Entre com suas credenciais para acompanhar o processamento das folhas da DIGEP.</p>
+              <p className="login-description">Entre para consultar as folhas, servidores, envios e auditoria pelo sistema.</p>
               <form className="form-stack" onSubmit={handleLogin}>
                 <label className="field-label">Usuário ou e-mail
                   <input data-testid="input-login-user" value={loginUser} onChange={(event) => setLoginUser(event.target.value)} placeholder="admin@undf.edu.br" autoComplete="username" />
@@ -545,6 +550,7 @@ function App() {
                     <button data-testid="button-toggle-password" className="inline-action" type="button" onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? 'Ocultar' : 'Mostrar'}</button>
                   </span>
                 </label>
+                <p className="login-footnote">Acesso de demonstração: senha 123456.</p>
                 <div className="form-options">
                   <label className="check-label"><input data-testid="checkbox-remember-access" type="checkbox" defaultChecked /> Lembrar acesso</label>
                   <button data-testid="button-forgot-password" className="inline-action" type="button" onClick={() => announce('Para redefinir seu acesso, procure a administração da DIGEP.')}>Esqueci minha senha</button>
