@@ -65,6 +65,14 @@ router.patch("/timesheets/:id/review", async (req, res, next) => {
       competency?: string;
       note?: string;
     };
+    if (!action || !["confirm", "pending", "reject"].includes(action)) {
+      res.status(400).json({ message: "Ação de revisão inválida" });
+      return;
+    }
+    if (action === "confirm" && (!name?.trim() || !matricula?.trim())) {
+      res.status(400).json({ message: "Nome e matrícula são obrigatórios para arquivar" });
+      return;
+    }
     const status = action === "confirm" ? "arquivada" : action === "reject" ? "rejeitada" : "pendente";
     const [current] = await db.select().from(timesheets).where(eq(timesheets.reference, req.params.id));
     if (!current) {
@@ -74,7 +82,15 @@ router.patch("/timesheets/:id/review", async (req, res, next) => {
     let employeeId = current.employeeId;
     if (matricula?.trim()) {
       const [employee] = await db.select().from(employees).where(eq(employees.matricula, matricula.trim()));
-      employeeId = employee?.id ?? null;
+      if (employee) {
+        employeeId = employee.id;
+      } else if (name?.trim()) {
+        const [createdEmployee] = await db.insert(employees).values({ name: name.trim(), matricula: matricula.trim() }).returning({ id: employees.id });
+        employeeId = createdEmployee.id;
+      } else {
+        res.status(400).json({ message: "Matrícula não cadastrada e nome não informado" });
+        return;
+      }
     }
     const [updated] = await db.update(timesheets).set({
       employeeId,
@@ -116,11 +132,16 @@ router.post("/employees/import", async (req, res, next) => {
 
 router.patch("/dispatches/:id/authorize", async (req, res, next) => {
   try {
-    const [updated] = await db.update(dispatches).set({ authorizedAt: new Date() }).where(eq(dispatches.id, Number(req.params.id))).returning();
-    if (!updated) {
+    const [current] = await db.select().from(dispatches).where(eq(dispatches.id, Number(req.params.id)));
+    if (!current) {
       res.status(404).json({ message: "Despacho não encontrado" });
       return;
     }
+    if (current.status !== "pendente" || current.authorizedAt) {
+      res.status(409).json({ message: "Este despacho não está aguardando autorização" });
+      return;
+    }
+    const [updated] = await db.update(dispatches).set({ authorizedAt: new Date() }).where(eq(dispatches.id, current.id)).returning();
     await audit("despacho_autorizado", "dispatch", String(updated.id));
     res.json(updated);
   } catch (error) {
@@ -130,11 +151,16 @@ router.patch("/dispatches/:id/authorize", async (req, res, next) => {
 
 router.patch("/dispatches/:id/send", async (req, res, next) => {
   try {
-    const [updated] = await db.update(dispatches).set({ status: "enviado", sentAt: new Date(), errorMessage: null }).where(eq(dispatches.id, Number(req.params.id))).returning();
-    if (!updated) {
+    const [current] = await db.select().from(dispatches).where(eq(dispatches.id, Number(req.params.id)));
+    if (!current) {
       res.status(404).json({ message: "Despacho não encontrado" });
       return;
     }
+    if (current.status !== "pendente" || !current.authorizedAt) {
+      res.status(409).json({ message: "Autorize o despacho antes de simular o envio" });
+      return;
+    }
+    const [updated] = await db.update(dispatches).set({ status: "enviado", sentAt: new Date(), errorMessage: null }).where(eq(dispatches.id, current.id)).returning();
     await audit("despacho_enviado_simulado", "dispatch", String(updated.id));
     res.json(updated);
   } catch (error) {
@@ -144,11 +170,16 @@ router.patch("/dispatches/:id/send", async (req, res, next) => {
 
 router.patch("/dispatches/:id/resend", async (req, res, next) => {
   try {
-    const [updated] = await db.update(dispatches).set({ status: "pendente", authorizedAt: null, sentAt: null, errorMessage: null }).where(eq(dispatches.id, Number(req.params.id))).returning();
-    if (!updated) {
+    const [current] = await db.select().from(dispatches).where(eq(dispatches.id, Number(req.params.id)));
+    if (!current) {
       res.status(404).json({ message: "Despacho não encontrado" });
       return;
     }
+    if (current.status !== "erro") {
+      res.status(409).json({ message: "Somente despachos com erro podem ser reenviados" });
+      return;
+    }
+    const [updated] = await db.update(dispatches).set({ status: "pendente", authorizedAt: null, sentAt: null, errorMessage: null }).where(eq(dispatches.id, current.id)).returning();
     await audit("despacho_reenviado", "dispatch", String(updated.id));
     res.json(updated);
   } catch (error) {

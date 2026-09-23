@@ -67,6 +67,15 @@ interface Employee {
   acumula: boolean;
 }
 
+interface ImportEmployee {
+  name: string;
+  matricula: string;
+  cpfLastDigits?: string;
+  email?: string;
+  workloadHours?: number;
+  accumulatesRole?: boolean;
+}
+
 interface Dispatch {
   id: number;
   employee_name: string;
@@ -224,6 +233,7 @@ function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState(false);
+  const [importRows, setImportRows] = useState<ImportEmployee[]>([]);
   const [batchFile, setBatchFile] = useState<File | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
   const batchInputRef = useRef<HTMLInputElement>(null);
@@ -430,14 +440,44 @@ function App() {
     announce(`Lote recebido. ${batchFile.name} foi encaminhado para conferência manual.`);
   };
 
-  const validateImport = (event: FormEvent<HTMLFormElement>) => {
+  const validateImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!importFile) {
       announce('Selecione uma planilha antes de validar.');
       return;
     }
+    if (!importFile.name.toLowerCase().endsWith('.csv')) {
+      announce('A prévia automática está disponível para arquivos CSV.');
+      return;
+    }
+    const lines = (await importFile.text()).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length < 2) {
+      announce('A planilha precisa conter cabeçalho e pelo menos uma linha.');
+      return;
+    }
+    const headers = lines[0].split(',').map((header) => header.trim().toLowerCase());
+    const column = (names: string[]) => headers.findIndex((header) => names.includes(header));
+    const nameIndex = column(['nome', 'name']);
+    const matriculaIndex = column(['matrícula', 'matricula', 'registration']);
+    if (nameIndex < 0 || matriculaIndex < 0) {
+      announce('CSV inválido: inclua as colunas Nome e Matrícula.');
+      return;
+    }
+    const rows = lines.slice(1).map((line) => line.split(',').map((value) => value.trim())).map((values) => ({
+      name: values[nameIndex] ?? '',
+      matricula: values[matriculaIndex] ?? '',
+      cpfLastDigits: values[column(['cpf', 'últimos dígitos do cpf', 'ultimos digitos do cpf'])] ?? undefined,
+      email: values[column(['e-mail', 'email'])] ?? undefined,
+      workloadHours: Number(values[column(['carga horária', 'carga horaria', 'workload'])]) || 40,
+      accumulatesRole: ['sim', 'true', '1', 'yes'].includes((values[column(['acumula', 'acumula cargo', 'accumulates'])] ?? '').toLowerCase()),
+    })).filter((row) => row.name && row.matricula);
+    if (!rows.length) {
+      announce('Nenhuma linha válida foi encontrada no CSV.');
+      return;
+    }
+    setImportRows(rows);
     setImportPreview(true);
-    announce('Prévia validada: 4 linhas prontas e 1 linha para correção.');
+    announce(`Prévia pronta: ${rows.length} linha${rows.length === 1 ? '' : 's'} válida${rows.length === 1 ? '' : 's'}.`);
   };
 
   const confirmImport = async () => {
@@ -445,7 +485,7 @@ function App() {
       try {
         await apiRequest('/employees/import', {
           method: 'POST',
-          body: JSON.stringify([{ name: 'Rafael Moura', matricula: '2026099', cpfLastDigits: '67', email: 'rafael.moura@undf.edu.br', workloadHours: 40, accumulatesRole: false }]),
+          body: JSON.stringify(importRows),
         });
         await refreshFromApi();
         setImportPreview(false);
@@ -458,12 +498,13 @@ function App() {
         return;
       }
     }
-    const newEmployee: Employee = { id: 20, name: 'Rafael Moura', matricula: '2026099', cpf: '***.***.***-67', email: 'rafael.moura@undf.edu.br', carga_horaria: 40, acumula: false };
-    setEmployees((rows) => [...rows, newEmployee]);
+    const newEmployees: Employee[] = importRows.map((row, index) => ({ id: 20 + index, name: row.name, matricula: row.matricula, cpf: row.cpfLastDigits ? `***.***.***-${row.cpfLastDigits}` : '***.***.***-**', email: row.email ?? '', carga_horaria: row.workloadHours ?? 40, acumula: row.accumulatesRole ?? false }));
+    setEmployees((rows) => [...rows, ...newEmployees]);
+    setImportRows([]);
     setImportPreview(false);
     setImportFile(null);
     if (employeeInputRef.current) employeeInputRef.current.value = '';
-    announce('Importação concluída: 4 servidores adicionados ao cadastro.');
+    announce(`Importação concluída: ${newEmployees.length} servidor${newEmployees.length === 1 ? '' : 'es'} adicionado${newEmployees.length === 1 ? '' : 's'} ao cadastro.`);
   };
 
   const authorizeDispatch = async (id: number) => {
@@ -598,9 +639,9 @@ function App() {
         </header>
         <div className="page-content">
           {view === 'dashboard' && <DashboardView dashboard={dashboard} competency={competency} noticeVisible={noticeVisible} setNoticeVisible={setNoticeVisible} attentionRows={attentionRows} recentActivity={recentActivity} navigate={navigate} selectQueue={selectQueue} announce={announce} />}
-          {view === 'ocr' && <OcrView competency={competency} queueRows={queueRows} selectedQueue={selectedQueue} selectedQueueId={selectedQueueId} selectQueue={selectQueue} draftName={draftName} setDraftName={setDraftName} draftMatricula={draftMatricula} setDraftMatricula={setDraftMatricula} draftCompetencia={draftCompetencia} setDraftCompetencia={setDraftCompetencia} draftNote={draftNote} setDraftNote={setDraftNote} reviewAction={reviewAction} navigate={navigate} announce={announce} />}
+          {view === 'ocr' && <OcrView competency={competency} queueRows={queueRows} selectedQueue={selectedQueue} selectedQueueId={selectedQueueId} selectQueue={selectQueue} draftName={draftName} setDraftName={setDraftName} draftMatricula={draftMatricula} setDraftMatricula={setDraftMatricula} draftCompetencia={draftCompetencia} setDraftCompetencia={setDraftCompetencia} draftNote={draftNote} setDraftNote={setDraftNote} reviewAction={reviewAction} refreshData={refreshFromApi} navigate={navigate} announce={announce} />}
           {view === 'arquivo' && <ArchiveView rows={filteredArchive} search={archiveSearch} setSearch={setArchiveSearch} status={archiveStatus} setStatus={setArchiveStatus} navigate={navigate} />}
-          {view === 'servidores' && <EmployeesView employees={employees} importOpen={importOpen} setImportOpen={setImportOpen} importFile={importFile} setImportFile={setImportFile} importPreview={importPreview} validateImport={validateImport} confirmImport={confirmImport} inputRef={employeeInputRef} navigate={navigate} />}
+          {view === 'servidores' && <EmployeesView employees={employees} importOpen={importOpen} setImportOpen={setImportOpen} importFile={importFile} setImportFile={setImportFile} importPreview={importPreview} importRows={importRows} validateImport={validateImport} confirmImport={confirmImport} inputRef={employeeInputRef} navigate={navigate} />}
           {view === 'envios' && <DispatchView dispatches={filteredDispatches} status={dispatchStatus} setStatus={setDispatchStatus} authorizeDispatch={authorizeDispatch} simulateSend={simulateSend} resendDispatch={resendDispatch} navigate={navigate} />}
           {view === 'auditoria' && <AuditView audit={audit} competency={competency} navigate={navigate} />}
           {view === 'novo-lote' && <BatchView batchFile={batchFile} setBatchFile={setBatchFile} processBatch={processBatch} inputRef={batchInputRef} navigate={navigate} />}
@@ -651,7 +692,7 @@ function Legend({ value, label, tone }: { value: number; label: string; tone: st
   return <div><i className={`legend-dot ${tone}`} /><strong>{value}</strong><span>{label}</span></div>;
 }
 
-function OcrView({ competency, queueRows, selectedQueue, selectedQueueId, selectQueue, draftName, setDraftName, draftMatricula, setDraftMatricula, draftCompetencia, setDraftCompetencia, draftNote, setDraftNote, reviewAction, navigate, announce }: { competency: string; queueRows: Timesheet[]; selectedQueue: Timesheet | null; selectedQueueId: string | null; selectQueue: (id: string) => void; draftName: string; setDraftName: (value: string) => void; draftMatricula: string; setDraftMatricula: (value: string) => void; draftCompetencia: string; setDraftCompetencia: (value: string) => void; draftNote: string; setDraftNote: (value: string) => void; reviewAction: (action: 'confirm' | 'pending' | 'reject') => void; navigate: (view: View) => void; announce: (message: string) => void }) {
+function OcrView({ competency, queueRows, selectedQueue, selectedQueueId, selectQueue, draftName, setDraftName, draftMatricula, setDraftMatricula, draftCompetencia, setDraftCompetencia, draftNote, setDraftNote, reviewAction, refreshData, navigate, announce }: { competency: string; queueRows: Timesheet[]; selectedQueue: Timesheet | null; selectedQueueId: string | null; selectQueue: (id: string) => void; draftName: string; setDraftName: (value: string) => void; draftMatricula: string; setDraftMatricula: (value: string) => void; draftCompetencia: string; setDraftCompetencia: (value: string) => void; draftNote: string; setDraftNote: (value: string) => void; reviewAction: (action: 'confirm' | 'pending' | 'reject') => void; refreshData: () => Promise<void>; navigate: (view: View) => void; announce: (message: string) => void }) {
   return <section aria-labelledby="ocr-heading"><div className="page-heading"><div><p className="eyebrow">Processamento · {competency}</p><h1 id="ocr-heading">Conferência de OCR</h1><p className="heading-support">Revise os dados extraídos antes de arquivar cada folha.</p></div><div className="heading-actions"><Button data-testid="button-ocr-back" className="secondary-button" onClick={() => navigate('dashboard')}><ArrowLeft size={14} /> Dashboard</Button><Button data-testid="button-ocr-new-batch" className="primary-button" onClick={() => navigate('novo-lote')}><Upload size={14} /> Novo lote</Button></div></div><div className="page-toolbar"><div className="toolbar-status"><i className="live-dot" /><strong>{queueRows.length} {queueRows.length === 1 ? 'folha' : 'folhas'} aguardando conferência</strong><span>· Atualizado agora</span></div><div className="toolbar-actions"><Button data-testid="button-ocr-refresh" className="secondary-button" onClick={() => announce('Fila atualizada com os dados locais mais recentes.')}><RefreshCw size={14} /> Atualizar</Button></div></div><div className="ocr-layout"><article className="panel queue-panel"><div className="queue-header"><div><h2>Fila de conferência</h2><p>Selecione uma folha para revisar</p></div><span className="queue-count">{String(queueRows.length).padStart(2, '0')}</span></div><div className="queue-list">{queueRows.length ? queueRows.map((row) => <button data-testid={`queue-item-${row.id}`} key={row.id} className={`queue-item ${selectedQueueId === row.id ? 'selected' : ''}`} type="button" onClick={() => selectQueue(row.id)}><span className="queue-thumb">REGISTRO<br />DE<br />FREQUÊNCIA</span><span className="queue-item-copy"><strong>{row.name}</strong><span>Mat. {row.matricula ?? 'não encontrada'} · {row.competencia}</span><span><StatusPill status={row.status} /><small className="queue-confidence">{row.confidence}%</small></span></span><ChevronRight size={15} className="queue-chevron" /></button>) : <div className="empty-inline">A fila de conferência está limpa para esta competência.</div>}</div><div className="queue-footer"><span><strong>{selectedQueue ? queueRows.findIndex((row) => row.id === selectedQueue.id) + 1 : 0}</strong> de {queueRows.length} selecionada</span><span>Use a lista para navegar</span></div></article><article className="panel review-panel"><div className="review-header"><div><span className="review-kicker">Folha selecionada</span><h2>{selectedQueue?.name ?? 'Selecione uma folha'}</h2><p>{selectedQueue ? `Matrícula ${selectedQueue.matricula ?? 'não encontrada'} · Referência ${selectedQueue.competencia}` : 'Escolha um item na fila ao lado'}</p></div><div className="review-status">{selectedQueue ? <StatusPill status={selectedQueue.status} /> : <StatusPill status="ocr_indisponivel" label="Sem seleção" />}</div></div>{selectedQueue ? <><div className="review-body"><DocumentViewer selectedQueue={selectedQueue} announce={announce} /><div className="recognized-data"><div className="recognized-heading"><div><h3>Dados reconhecidos</h3><span>Revise e confirme a associação</span></div><button data-testid="button-confidence-info" className="inline-action" type="button" onClick={() => announce('A confiança indica a segurança da leitura automática por campo.')}>Info confiança</button></div><div className="confidence-card"><div className="confidence-card-top"><span>Confiança geral</span><strong>{selectedQueue.confidence}%</strong></div><div className="progress-track"><span style={{ width: `${selectedQueue.confidence}%`, background: selectedQueue.confidence < 70 ? '#c95c4c' : '#dda64e' }} /></div><p>{selectedQueue.confidence < 70 ? 'Revise os campos destacados antes de associar.' : selectedQueue.confidence === 0 ? 'OCR indisponível: preencha os dados manualmente.' : 'Alguns campos podem precisar de revisão.'}</p></div><form className="data-form" onSubmit={(event) => event.preventDefault()}><label className="field-label">Matrícula <span className="field-confidence">leitura manual</span><input data-testid="input-review-matricula" value={draftMatricula} onChange={(event) => setDraftMatricula(event.target.value)} placeholder="Ex.: 2024187" /></label><label className="field-label">Nome do servidor <input data-testid="input-review-name" value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="Nome completo" /></label><label className="field-label">Competência <select data-testid="select-review-competency" value={draftCompetencia} onChange={(event) => setDraftCompetencia(event.target.value)}>{competencies.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label className="field-label">Observação <span className="field-confidence">opcional</span><textarea data-testid="textarea-review-note" value={draftNote} onChange={(event) => setDraftNote(event.target.value)} placeholder="Adicione uma observação sobre esta conferência..." /></label></form><div className="association-check"><span className="check-icon"><Check size={11} /></span><div><strong>{draftMatricula && draftName ? 'Servidor identificado' : 'Associação pendente'}</strong><span>{draftMatricula && draftName ? 'Matrícula e nome prontos para conferência.' : 'Preencha matrícula e nome para completar o registro.'}</span></div></div></div></div><div className="review-footer"><button data-testid="button-reject-review" className="row-action" type="button" onClick={() => reviewAction('reject')}>Rejeitar processamento</button><div className="review-footer-actions"><Button data-testid="button-pending-review" className="secondary-button" onClick={() => reviewAction('pending')}>Encaminhar para pendência</Button><Button data-testid="button-confirm-review" className="primary-button" onClick={() => reviewAction('confirm')}><CheckCircle2 size={14} /> Confirmar e arquivar</Button></div></div></> : <div className="empty-inline">Selecione uma folha na fila para abrir a visualização protegida.</div>}</article></div></section>;
 }
 
@@ -672,7 +713,7 @@ function ArchiveView({ rows, search, setSearch, status, setStatus, navigate }: {
   return <section aria-labelledby="archive-heading"><div className="page-heading"><div><p className="eyebrow">Gestão · Arquivo</p><h1 id="archive-heading">Arquivo de folhas</h1><p className="heading-support">Consulte as folhas processadas por competência, situação e identificação do servidor.</p></div><Button data-testid="button-archive-dashboard" className="secondary-button" onClick={() => navigate('dashboard')}><ArrowLeft size={14} /> Dashboard</Button></div><article className="panel table-panel"><div className="panel-heading"><div><h2>Folhas processadas</h2><p>{rows.length} registro{rows.length === 1 ? '' : 's'} encontrado{rows.length === 1 ? '' : 's'} em {status === 'todos' ? 'todos os status' : statusLabels[status as Status]}</p></div><div className="table-tools"><span className="search-wrap"><Search size={15} /><input data-testid="input-archive-search" className="search-field" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome, matrícula ou ID" /></span><select data-testid="select-archive-status" className="select-field" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos os status</option><option value="arquivada">Arquivadas</option><option value="reconhecida">Reconhecidas</option><option value="revisao">Em revisão</option><option value="pendente">Pendentes</option><option value="baixa_confianca">Baixa confiança</option><option value="ocr_indisponivel">OCR indisponível</option><option value="rejeitada">Rejeitadas</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID</th><th>Servidor</th><th>Matrícula</th><th>Competência</th><th>Situação</th><th>Confiança</th><th>Revisão</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.id}><td><span className="muted-cell">{row.id}</span></td><td><PersonCell name={row.name} /></td><td className="muted-cell">{row.matricula ?? '—'}</td><td>{row.competencia}</td><td><StatusPill status={row.status} /></td><td><Confidence value={row.confidence} /></td><td className="muted-cell">{formatDate(row.reviewed_at)}</td></tr>) : <tr><td colSpan={7}><div className="empty-inline"><PackageOpen size={22} /> Nenhuma folha encontrada com esses filtros.</div></td></tr>}</tbody></table></div></article></section>;
 }
 
-function EmployeesView({ employees, importOpen, setImportOpen, importFile, setImportFile, importPreview, validateImport, confirmImport, inputRef, navigate }: { employees: Employee[]; importOpen: boolean; setImportOpen: (open: boolean) => void; importFile: File | null; setImportFile: (file: File | null) => void; importPreview: boolean; validateImport: (event: FormEvent<HTMLFormElement>) => void; confirmImport: () => void; inputRef: React.RefObject<HTMLInputElement | null>; navigate: (view: View) => void }) {
+function EmployeesView({ employees, importOpen, setImportOpen, importFile, setImportFile, importPreview, importRows, validateImport, confirmImport, inputRef, navigate }: { employees: Employee[]; importOpen: boolean; setImportOpen: (open: boolean) => void; importFile: File | null; setImportFile: (file: File | null) => void; importPreview: boolean; importRows: ImportEmployee[]; validateImport: (event: FormEvent<HTMLFormElement>) => void; confirmImport: () => void; inputRef: React.RefObject<HTMLInputElement | null>; navigate: (view: View) => void }) {
   return <section aria-labelledby="employees-heading"><div className="page-heading"><div><p className="eyebrow">Gestão · Cadastro</p><h1 id="employees-heading">Servidores</h1><p className="heading-support">Consulte e importe dados de servidores para associar às folhas de ponto.</p></div><div className="heading-actions"><Button data-testid="button-employees-dashboard" className="secondary-button" onClick={() => navigate('dashboard')}><ArrowLeft size={14} /> Dashboard</Button><Button data-testid="button-toggle-import" className="primary-button" onClick={() => setImportOpen(!importOpen)}><FileSpreadsheet size={14} /> {importOpen ? 'Fechar importação' : 'Importar planilha'}</Button></div></div><article className="panel table-panel"><div className="panel-heading"><div><h2>Servidores cadastrados</h2><p>{employees.length} registros com dados pessoais protegidos</p></div><ShieldCheck size={19} color="#4d8374" /></div><div className="table-wrap"><table><thead><tr><th>ID</th><th>Nome</th><th>Matrícula</th><th>CPF</th><th>E-mail</th><th>Carga horária</th><th>Acúmulo</th></tr></thead><tbody>{employees.map((employee) => <tr key={employee.id}><td className="muted-cell">{employee.id}</td><td><PersonCell name={employee.name} /></td><td>{employee.matricula}</td><td className="muted-cell">{employee.cpf}</td><td className="muted-cell">{employee.email}</td><td>{employee.carga_horaria}h</td><td>{employee.acumula ? <StatusPill status="pendente" label="Sim" /> : <StatusPill status="reconhecida" label="Não" />}</td></tr>)}</tbody></table></div></article>{importOpen && <article className="panel import-panel"><form className="import-form" onSubmit={validateImport}><label className="field-label">Planilha de servidores<input ref={inputRef} data-testid="input-employee-file" type="file" accept=".csv,.xlsx" onChange={(event) => setImportFile(event.target.files?.[0] ?? null)} /><span className="import-help">Colunas esperadas: Nome, Matrícula, CPF, E-mail, Carga Horária e Acumula cargo.</span></label><Button data-testid="button-validate-import" className="primary-button" type="submit"><ClipboardCheck size={14} /> Validar planilha</Button></form>{importFile && <div className="file-selected" data-testid="status-import-file"><FileSpreadsheet size={15} /> {importFile.name}</div>}{importPreview && <div className="import-result" data-testid="panel-import-preview"><div className="import-summary"><strong>Prévia pronta</strong><br />4 linhas válidas de 5 encontradas. Uma linha requer correção antes de uma próxima importação.</div><table className="import-preview"><thead><tr><th>Nome</th><th>Matrícula</th><th>Ação</th></tr></thead><tbody><tr><td>Rafael Moura</td><td>2026099</td><td><StatusPill status="reconhecida" label="Inserir" /></td></tr><tr><td>1 linha</td><td>CPF incompleto</td><td><StatusPill status="revisao" label="Revisar" /></td></tr></tbody></table><Button data-testid="button-confirm-import" className="primary-button" type="button" onClick={confirmImport}><CheckCircle2 size={14} /> Confirmar linhas válidas</Button></div>}</article>}</section>;
 }
 
