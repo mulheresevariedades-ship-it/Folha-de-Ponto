@@ -1,0 +1,1839 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ponto Digital DIGEP - Mesa de Operações</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons para ícones modernos -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <!-- SheetJS (xlsx) para leitura e escrita de planilhas Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- PDF.js para renderização e extração de texto de PDFs reais -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+  </script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7f7',
+              100: '#d9ecec',
+              200: '#b4dadb',
+              500: '#1e6267',
+              600: '#174f53',
+              700: '#133e42',
+              800: '#0f2f32',
+              900: '#0b2123',
+            },
+            sand: {
+              50: '#fdfbf7',
+              100: '#f7f3ec',
+              200: '#ede6da',
+              300: '#dfd5c2',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1ede6;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #c3b9a7;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9d917d;
+    }
+  </style>
+</head>
+<body class="bg-sand-100 text-stone-800 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- Top Navigation Bar com Informações de Rede e Concorrência -->
+  <header class="bg-brand-900 text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <!-- Logo e Identidade UnDF/DIGEP -->
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 font-bold text-xl shadow-inner">
+            <i class="ph-bold ph-identification-card"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold tracking-tight text-lg text-white">Ponto Digital DIGEP</span>
+              <span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-0.5 rounded border border-emerald-500/30 font-medium">v2.0 Portátil</span>
+            </div>
+            <p class="text-xs text-brand-200">Universidade do Distrito Federal (UnDF) &bull; Pasta de Rede Compartilhada</p>
+          </div>
+        </div>
+
+        <!-- Indicador de Status de Rede e Concorrência (Lock) -->
+        <div class="flex items-center gap-4">
+          <!-- Botão Simular Lock de Rede (Requisito 5.3) -->
+          <button id="toggle-lock-btn" onclick="toggleNetworkLock()" class="text-xs bg-brand-800 hover:bg-brand-700 text-brand-100 px-3 py-1.5 rounded-lg border border-brand-700 flex items-center gap-1.5 transition shadow-sm" title="Alternar simulação de arquivo em uso por outro operador">
+            <i class="ph-bold ph-lock-key" id="lock-btn-icon"></i>
+            <span id="lock-btn-label">Simular Lock de Rede</span>
+          </button>
+
+          <!-- Status do Disco de Rede -->
+          <div class="hidden sm:flex items-center gap-2 bg-black/20 px-3 py-1.5 rounded-lg border border-white/10 text-xs">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span class="text-stone-300">Volume: <code class="text-emerald-300 font-mono">\\rede\digep\folhas\</code></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Banner de Lock de Concorrência Ativo (Requisito 5.3) -->
+  <div id="concurrency-banner" class="hidden bg-amber-500 text-stone-950 px-4 py-2.5 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 shadow-inner transition-all duration-300">
+    <i class="ph-fill ph-warning-octagon text-lg text-stone-950"></i>
+    <span><strong>AVISO DE CONCORRÊNCIA:</strong> Sistema em uso pelo computador <code>DIGEP-WS04</code>. Salvamentos e alterações estão bloqueados temporariamente para evitar corrupção de arquivos.</span>
+  </div>
+
+  <!-- Barra de Abas Principal -->
+  <div class="bg-white border-b border-stone-200 shadow-sm sticky top-16 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <nav class="flex space-x-1 sm:space-x-4 overflow-x-auto py-2" aria-label="Abas">
+        <button onclick="switchTab('tab-upload')" id="nav-tab-upload" class="tab-btn active px-3.5 py-2 text-sm font-medium rounded-lg text-brand-700 bg-brand-50 border border-brand-200/60 flex items-center gap-2 transition whitespace-nowrap">
+          <i class="ph-bold ph-files text-base"></i>
+          1. Folhas e Lotes PDF
+          <span id="badge-folhas-count" class="bg-brand-600 text-white text-[11px] px-1.5 py-0.2 rounded-full font-mono">0</span>
+        </button>
+
+        <button onclick="switchTab('tab-servidores')" id="nav-tab-servidores" class="tab-btn px-3.5 py-2 text-sm font-medium rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-50 flex items-center gap-2 transition whitespace-nowrap">
+          <i class="ph-bold ph-users-three text-base"></i>
+          2. Servidores (Excel)
+          <span id="badge-servidores-count" class="bg-stone-200 text-stone-700 text-[11px] px-1.5 py-0.2 rounded-full font-mono">0</span>
+        </button>
+
+        <button onclick="switchTab('tab-calendario')" id="nav-tab-calendario" class="tab-btn px-3.5 py-2 text-sm font-medium rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-50 flex items-center gap-2 transition whitespace-nowrap">
+          <i class="ph-bold ph-calendar text-base"></i>
+          3. Calendário Acadêmico
+          <span id="badge-feriados-count" class="bg-stone-200 text-stone-700 text-[11px] px-1.5 py-0.2 rounded-full font-mono">0</span>
+        </button>
+
+        <button onclick="switchTab('tab-envios')" id="nav-tab-envios" class="tab-btn px-3.5 py-2 text-sm font-medium rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-50 flex items-center gap-2 transition whitespace-nowrap">
+          <i class="ph-bold ph-paper-plane-tilt text-base"></i>
+          4. Disparos e SMTP
+        </button>
+
+        <button onclick="switchTab('tab-auditoria')" id="nav-tab-auditoria" class="tab-btn px-3.5 py-2 text-sm font-medium rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-50 flex items-center gap-2 transition whitespace-nowrap">
+          <i class="ph-bold ph-clock-counter-clockwise text-base"></i>
+          5. Histórico e Logs
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Container de Toasts para Alertas e Guardrails -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none"></div>
+
+  <!-- Conteúdo Principal -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+    <!-- ========================================================================= -->
+    <!-- ABA 1: GESTÃO, PROCESSAMENTO E ARMAZENAMENTO DE FOLHAS DE PONTO (PDF)     -->
+    <!-- ========================================================================= -->
+    <div id="tab-upload" class="tab-content space-y-6">
+      
+      <!-- Topo de Instrução e Resumo Rápido -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl font-bold">
+            <i class="ph ph-folder-notch-open"></i>
+          </div>
+          <div>
+            <p class="text-xs text-stone-500 uppercase tracking-wider font-semibold">Diretórios Gerados</p>
+            <p id="stat-diretorios" class="text-xl font-bold text-stone-800">0 pastas mensais</p>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center text-2xl font-bold">
+            <i class="ph ph-file-pdf"></i>
+          </div>
+          <div>
+            <p class="text-xs text-stone-500 uppercase tracking-wider font-semibold">Folhas Armazenadas</p>
+            <p id="stat-folhas-total" class="text-xl font-bold text-stone-800">0 arquivos ativos</p>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center text-2xl font-bold">
+            <i class="ph ph-copy"></i>
+          </div>
+          <div>
+            <p class="text-xs text-stone-500 uppercase tracking-wider font-semibold">Backups de Duplicidade</p>
+            <p id="stat-backups-total" class="text-xl font-bold text-stone-800">0 arquivos _OLD</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Zona de Upload Múltiplo de PDFs com Guardrail (Requisitos 1.1 e 1.5) -->
+      <div class="bg-white rounded-2xl border-2 border-dashed border-stone-300 hover:border-brand-500 p-8 text-center transition-all shadow-sm bg-sand-50/50">
+        <input type="file" id="pdf-file-input" multiple accept=".pdf" class="hidden" onchange="handleMultiplePDFUpload(event)">
+        <div class="max-w-md mx-auto space-y-3">
+          <div class="w-16 h-16 mx-auto rounded-full bg-brand-50 text-brand-600 flex items-center justify-center text-3xl shadow-sm">
+            <i class="ph-bold ph-cloud-arrow-up"></i>
+          </div>
+          <h3 class="text-lg font-bold text-stone-800">Envio de Folhas Digitalizadas (Múltiplos Arquivos)</h3>
+          <p class="text-xs text-stone-500 leading-relaxed">
+            Selecione um ou vários arquivos PDF (ex: Upload 1, Upload 2). O sistema identifica automaticamente <strong>servidor</strong> e <strong>mês de referência</strong>, organiza em pastas <code>Folhas_AAAA-MM/</code> e aplica backups caso haja duplicidades.
+          </p>
+          
+          <div class="pt-2 flex flex-col sm:flex-row justify-center gap-2">
+            <button onclick="document.getElementById('pdf-file-input').click()" class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow transition flex items-center justify-center gap-2">
+              <i class="ph-bold ph-file-plus text-lg"></i>
+              Selecionar Arquivos PDF
+            </button>
+            <button onclick="carregarFolhasExemplo()" class="bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold px-4 py-2.5 rounded-xl border border-stone-300 transition flex items-center justify-center gap-1.5">
+              <i class="ph-bold ph-magic-wand text-base"></i>
+              Carregar Dados de Demonstração (UnDF)
+            </button>
+          </div>
+
+          <!-- Alerta de GuardRail estrito -->
+          <div class="mt-4 inline-flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-medium">
+            <i class="ph-bold ph-shield-check text-base text-emerald-600"></i>
+            Guardrail Ativo: Arquivos não-PDF (ex: <code>.jpg</code>, <code>.png</code>, <code>.docx</code>) serão bloqueados e rejeitados.
+          </div>
+        </div>
+      </div>
+
+      <!-- Visualizador do Sistema de Arquivos da Rede (Requisito 1.3 e 1.4) -->
+      <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+        <div class="p-4 sm:p-5 border-b border-stone-200 bg-sand-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h4 class="font-bold text-stone-800 flex items-center gap-2">
+              <i class="ph-bold ph-tree-structure text-brand-600"></i>
+              Estrutura de Armazenamento por Competência (Rede)
+            </h4>
+            <p class="text-xs text-stone-500">Padrão: <code>Nome_do_servidor-AAAA-MM.pdf</code> com sanitização de acentos e espaços.</p>
+          </div>
+
+          <!-- Filtro rápido por pasta de mês -->
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-medium text-stone-600">Filtrar Pasta:</label>
+            <select id="filter-folder-select" onchange="renderFolhasTable()" class="text-xs bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 font-mono focus:ring-2 focus:ring-brand-500 outline-none">
+              <option value="ALL">Todas as Pastas</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tabela das Folhas Arquivadas -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-stone-600">
+            <thead class="bg-stone-100 text-stone-700 uppercase font-semibold text-[11px] border-b border-stone-200">
+              <tr>
+                <th class="py-3 px-4">Diretório / Pasta</th>
+                <th class="py-3 px-4">Nome do Arquivo Padronizado</th>
+                <th class="py-3 px-4">Servidor Detectado</th>
+                <th class="py-3 px-4">Matrícula</th>
+                <th class="py-3 px-4">Competência</th>
+                <th class="py-3 px-4">Status / Versão</th>
+                <th class="py-3 px-4 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="folhas-table-body" class="divide-y divide-stone-100">
+              <tr>
+                <td colspan="7" class="py-8 text-center text-stone-400">
+                  <i class="ph ph-folder-notch-open text-3xl mb-1 block"></i>
+                  Nenhuma folha de ponto carregada ainda. Envie arquivos PDF acima ou carregue a demonstração.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 2: CADASTRO E GESTÃO DE SERVIDORES (EXCEL & MANUAL)                   -->
+    <!-- ========================================================================= -->
+    <div id="tab-servidores" class="tab-content hidden space-y-6">
+      
+      <!-- Seção de Ações: Upload Excel e Cadastro Manual -->
+      <div class="bg-white p-5 rounded-xl border border-stone-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div>
+          <h4 class="font-bold text-stone-800 text-base flex items-center gap-2">
+            <i class="ph-bold ph-table text-emerald-600"></i>
+            Base Cadastral de Servidores e Professores UnDF
+          </h4>
+          <p class="text-xs text-stone-500">Importe planilhas <code>.xlsx</code> / <code>.xls</code> com validação de estrutura ou cadastre manualmente.</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <input type="file" id="excel-servidores-input" accept=".xlsx, .xls" class="hidden" onchange="handleExcelServidoresUpload(event)">
+          <button onclick="document.getElementById('excel-servidores-input').click()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-sm">
+            <i class="ph-bold ph-file-xls text-base"></i>
+            Importar Planilha Excel (.xlsx)
+          </button>
+
+          <button onclick="openModalNovoServidor()" class="bg-stone-800 hover:bg-stone-900 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-sm">
+            <i class="ph-bold ph-user-plus text-base"></i>
+            Novo Servidor Manual
+          </button>
+        </div>
+      </div>
+
+      <!-- Barra de Pesquisa e Filtros (Requisito 2.2) -->
+      <div class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="relative w-full sm:w-96">
+          <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-stone-400 text-base"></i>
+          <input type="text" id="busca-servidores-input" oninput="renderServidoresTable()" placeholder="Buscar por Nome, Matrícula ou CPF..." class="w-full pl-9 pr-3 py-2 text-xs border border-stone-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none">
+        </div>
+        <div class="flex items-center gap-2 text-xs text-stone-500">
+          <span id="servidores-filtro-info">Exibindo 0 servidores</span>
+        </div>
+      </div>
+
+      <!-- Tabela de Servidores -->
+      <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-stone-600">
+            <thead class="bg-stone-100 text-stone-700 uppercase font-semibold text-[11px] border-b border-stone-200">
+              <tr>
+                <th class="py-3 px-4">Matrícula</th>
+                <th class="py-3 px-4">Nome do Servidor</th>
+                <th class="py-3 px-4">Cargo / Lotação</th>
+                <th class="py-3 px-4">Carga Horária</th>
+                <th class="py-3 px-4">Acumula Cargo?</th>
+                <th class="py-3 px-4">E-mail Pessoal</th>
+                <th class="py-3 px-4 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="servidores-table-body" class="divide-y divide-stone-100">
+              <tr>
+                <td colspan="7" class="py-8 text-center text-stone-400">
+                  Nenhum servidor cadastrado. Importe a planilha <code>Planilha de professores - input 1.xlsx</code> ou adicione manualmente.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 3: CALENDÁRIO ACADÊMICO E DATAS ESPECIAIS (EXCEL & MANUAL)            -->
+    <!-- ========================================================================= -->
+    <div id="tab-calendario" class="tab-content hidden space-y-6">
+      
+      <!-- Importação do Calendário Oficial -->
+      <div class="bg-white p-5 rounded-xl border border-stone-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div>
+          <h4 class="font-bold text-stone-800 text-base flex items-center gap-2">
+            <i class="ph-bold ph-calendar-blank text-indigo-600"></i>
+            Calendário de Feriados, Recessos e Pontos Facultativos
+          </h4>
+          <p class="text-xs text-stone-500">Importe a planilha <code>1 - Feriados e Recessos DF 2026 - input.xlsx</code> ou registre datas especiais.</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <input type="file" id="excel-calendario-input" accept=".xlsx, .xls" class="hidden" onchange="handleExcelCalendarioUpload(event)">
+          <button onclick="document.getElementById('excel-calendario-input').click()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-sm">
+            <i class="ph-bold ph-file-arrow-up text-base"></i>
+            Importar Calendário (.xlsx)
+          </button>
+
+          <button onclick="openModalNovaData()" class="bg-stone-800 hover:bg-stone-900 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-sm">
+            <i class="ph-bold ph-plus text-base"></i>
+            Adicionar Data Manual
+          </button>
+        </div>
+      </div>
+
+      <!-- Tabela do Calendário -->
+      <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-stone-600">
+            <thead class="bg-stone-100 text-stone-700 uppercase font-semibold text-[11px] border-b border-stone-200">
+              <tr>
+                <th class="py-3 px-4">Data Oficial</th>
+                <th class="py-3 px-4">Especificação / Descrição</th>
+                <th class="py-3 px-4">Classificação</th>
+                <th class="py-3 px-4 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="calendario-table-body" class="divide-y divide-stone-100">
+              <tr>
+                <td colspan="4" class="py-8 text-center text-stone-400">
+                  Nenhuma data especial carregada. Importe o arquivo de Feriados e Recessos ou adicione manualmente.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 4: CONFIGURAÇÕES, ENVIO DE E-MAILS (SMTP) E DISPAROS                  -->
+    <!-- ========================================================================= -->
+    <div id="tab-envios" class="tab-content hidden space-y-6">
+      
+      <!-- Configurações SMTP Institucional (Requisito 4.1) -->
+      <div class="bg-white p-5 rounded-xl border border-stone-200 shadow-sm">
+        <div class="flex items-center justify-between mb-4 pb-3 border-b border-stone-200">
+          <div>
+            <h4 class="font-bold text-stone-800 text-base flex items-center gap-2">
+              <i class="ph-bold ph-envelope-simple text-blue-600"></i>
+              Configuração do Servidor de Envio SMTP (UnDF)
+            </h4>
+            <p class="text-xs text-stone-500">Parâmetros autenticados para envio de folhas para professores acumuladores de cargo.</p>
+          </div>
+          <span class="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-semibold px-2.5 py-1 rounded-full">
+            digep@undf.edu.br
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div>
+            <label class="block text-stone-600 font-medium mb-1">Host SMTP</label>
+            <input type="text" id="smtp-host" value="smtp.undf.edu.br" class="w-full p-2 border border-stone-300 rounded-lg font-mono">
+          </div>
+          <div>
+            <label class="block text-stone-600 font-medium mb-1">Porta</label>
+            <input type="number" id="smtp-port" value="587" class="w-full p-2 border border-stone-300 rounded-lg font-mono">
+          </div>
+          <div>
+            <label class="block text-stone-600 font-medium mb-1">E-mail Remetente</label>
+            <input type="email" id="smtp-user" value="digep@undf.edu.br" class="w-full p-2 border border-stone-300 rounded-lg font-mono">
+          </div>
+          <div>
+            <label class="block text-stone-600 font-medium mb-1">Chave / Senha de Aplicação</label>
+            <input type="password" id="smtp-pass" value="••••••••••••" class="w-full p-2 border border-stone-300 rounded-lg font-mono">
+          </div>
+        </div>
+      </div>
+
+      <!-- Fila de Disparo e Seleção Flexível (Requisito 4.2) -->
+      <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+        <div class="p-4 sm:p-5 border-b border-stone-200 bg-sand-50/50 flex flex-col md:flex-row items-center justify-between gap-3">
+          <div>
+            <h4 class="font-bold text-stone-800 text-sm">Fila de Despacho de Folhas (Acumuladores de Cargo)</h4>
+            <p class="text-xs text-stone-500">Selecione destinatários individualmente ou acione grupos automáticos.</p>
+          </div>
+
+          <!-- Ações em Massa (Requisito 4.2) -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="dispararEnvioGrupo('PENDENTES')" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition shadow-sm flex items-center gap-1.5">
+              <i class="ph-bold ph-paper-plane-tilt"></i>
+              Disparar Todos os Pendentes
+            </button>
+            <button onclick="dispararEnvioGrupo('ERROS')" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition shadow-sm flex items-center gap-1.5">
+              <i class="ph-bold ph-arrow-counter-clockwise"></i>
+              Reenviar Aqueles com Erro
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabela de Fila de Disparos -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-stone-600">
+            <thead class="bg-stone-100 text-stone-700 uppercase font-semibold text-[11px] border-b border-stone-200">
+              <tr>
+                <th class="py-3 px-4 w-10">
+                  <input type="checkbox" id="select-all-envios" onchange="toggleSelectAllEnvios(this)" class="rounded border-stone-300 text-brand-600 focus:ring-brand-500">
+                </th>
+                <th class="py-3 px-4">Servidor / Destinatário</th>
+                <th class="py-3 px-4">Matrícula</th>
+                <th class="py-3 px-4">Competência</th>
+                <th class="py-3 px-4">Arquivo Anexo</th>
+                <th class="py-3 px-4">Status de Envio</th>
+                <th class="py-3 px-4 text-center">Ação Manual</th>
+              </tr>
+            </thead>
+            <tbody id="envios-table-body" class="divide-y divide-stone-100">
+              <tr>
+                <td colspan="7" class="py-8 text-center text-stone-400">
+                  Nenhum servidor acumulador pronto para envio.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 5: HISTÓRICO, AUDITORIA E LOGS                                        -->
+    <!-- ========================================================================= -->
+    <div id="tab-auditoria" class="tab-content hidden space-y-6">
+      
+      <div class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div>
+          <h4 class="font-bold text-stone-800 text-sm">Trilha Completa de Auditoria e Logs de Envio</h4>
+          <p class="text-xs text-stone-500">Rastreabilidade de cada e-mail, upload e backup realizado no sistema.</p>
+        </div>
+        
+        <!-- Busca no Histórico por Nome, CPF ou Matrícula (Requisito 4.3) -->
+        <div class="relative w-full sm:w-80">
+          <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-stone-400 text-base"></i>
+          <input type="text" id="busca-auditoria-input" oninput="renderAuditoriaTable()" placeholder="Filtrar por Servidor, CPF ou Matrícula..." class="w-full pl-9 pr-3 py-2 text-xs border border-stone-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none">
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-stone-600">
+            <thead class="bg-stone-100 text-stone-700 uppercase font-semibold text-[11px] border-b border-stone-200">
+              <tr>
+                <th class="py-3 px-4">Data / Hora</th>
+                <th class="py-3 px-4">Operação</th>
+                <th class="py-3 px-4">Servidor / Matrícula</th>
+                <th class="py-3 px-4">Detalhes / Destinatário</th>
+                <th class="py-3 px-4">Resultado</th>
+              </tr>
+            </thead>
+            <tbody id="auditoria-table-body" class="divide-y divide-stone-100">
+              <tr>
+                <td colspan="5" class="py-8 text-center text-stone-400">
+                  Nenhum registro de log no momento.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MODAL: Resumo Prévio de Carga de Servidores (Requisito 2.1) -->
+  <div id="modal-preview-excel" class="fixed inset-0 bg-stone-900/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b pb-3">
+        <h3 class="font-bold text-stone-800 text-base flex items-center gap-2">
+          <i class="ph-bold ph-list-checks text-emerald-600 text-xl"></i>
+          Resumo Prévio da Planilha de Servidores
+        </h3>
+        <button onclick="closeModal('modal-preview-excel')" class="text-stone-400 hover:text-stone-700 text-lg">&times;</button>
+      </div>
+
+      <p class="text-xs text-stone-600">
+        A estrutura das colunas foi validada com sucesso. Confira o resumo dos registros antes de confirmar a gravação no sistema:
+      </p>
+
+      <!-- Caixas de Contagem -->
+      <div class="grid grid-cols-3 gap-3 text-center">
+        <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
+          <p id="preview-novos" class="text-xl font-bold text-emerald-700">0</p>
+          <p class="text-[11px] text-emerald-800 font-medium">Novos Cadastros</p>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 p-3 rounded-xl">
+          <p id="preview-atualizados" class="text-xl font-bold text-blue-700">0</p>
+          <p class="text-[11px] text-blue-800 font-medium">Atualizados</p>
+        </div>
+        <div class="bg-stone-50 border border-stone-200 p-3 rounded-xl">
+          <p id="preview-duplicados" class="text-xl font-bold text-stone-600">0</p>
+          <p class="text-[11px] text-stone-500 font-medium">Sem Alterações</p>
+        </div>
+      </div>
+
+      <div class="bg-sand-50 p-3 rounded-xl border border-stone-200 text-xs text-stone-600 max-h-40 overflow-y-auto space-y-1" id="preview-detalhes-lista">
+        <!-- Lista resumida inserida via JS -->
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modal-preview-excel')" class="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-lg">Cancelar</button>
+        <button onclick="confirmarGravacaoServidores()" class="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow">Confirmar Gravação</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Resumo de Carga do Calendário (Requisito 3.1) -->
+  <div id="modal-preview-calendario" class="fixed inset-0 bg-stone-900/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b pb-3">
+        <h3 class="font-bold text-stone-800 text-base flex items-center gap-2">
+          <i class="ph-bold ph-calendar-check text-indigo-600 text-xl"></i>
+          Resumo do Calendário Acadêmico
+        </h3>
+        <button onclick="closeModal('modal-preview-calendario')" class="text-stone-400 hover:text-stone-700 text-lg">&times;</button>
+      </div>
+
+      <p class="text-xs text-stone-600">
+        Leitura de feriados e recessos concluída. Confira os dados a serem gravados:
+      </p>
+
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="bg-indigo-50 border border-indigo-200 p-3 rounded-xl">
+          <p id="preview-cal-novos" class="text-xl font-bold text-indigo-700">0</p>
+          <p class="text-[11px] text-indigo-800 font-medium">Novos Feriados/Recessos</p>
+        </div>
+        <div class="bg-stone-50 border border-stone-200 p-3 rounded-xl">
+          <p id="preview-cal-existentes" class="text-xl font-bold text-stone-600">0</p>
+          <p class="text-[11px] text-stone-500 font-medium">Já Existentes</p>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modal-preview-calendario')" class="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-lg">Cancelar</button>
+        <button onclick="confirmarGravacaoCalendario()" class="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow">Confirmar Gravação</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Cadastro Manual de Servidor (Requisito 2.2) -->
+  <div id="modal-novo-servidor" class="fixed inset-0 bg-stone-900/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b pb-3">
+        <h3 id="modal-servidor-titulo" class="font-bold text-stone-800 text-base">Cadastrar Novo Servidor</h3>
+        <button onclick="closeModal('modal-novo-servidor')" class="text-stone-400 hover:text-stone-700 text-lg">&times;</button>
+      </div>
+
+      <input type="hidden" id="form-servidor-id">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="block text-stone-600 font-medium mb-1">Matrícula *</label>
+          <input type="text" id="form-servidor-matricula" class="w-full p-2 border border-stone-300 rounded-lg outline-none focus:ring-1 focus:ring-brand-500">
+        </div>
+        <div>
+          <label class="block text-stone-600 font-medium mb-1">CPF</label>
+          <input type="text" id="form-servidor-cpf" placeholder="000.000.000-00" class="w-full p-2 border border-stone-300 rounded-lg outline-none focus:ring-1 focus:ring-brand-500">
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-stone-600 font-medium mb-1">Nome Completo *</label>
+          <input type="text" id="form-servidor-nome" class="w-full p-2 border border-stone-300 rounded-lg outline-none focus:ring-1 focus:ring-brand-500">
+        </div>
+        <div>
+          <label class="block text-stone-600 font-medium mb-1">Cargo</label>
+          <input type="text" id="form-servidor-cargo" value="Professor - Magistério Superior" class="w-full p-2 border border-stone-300 rounded-lg outline-none focus:ring-1 focus:ring-brand-500">
+        </div>
+        <div>
+          <label class="block text-stone-600 font-medium mb-1">Carga Horária</label>
+          <select id="form-servidor-ch" class="w-full p-2 border border-stone-300 rounded-lg outline-none focus:ring-1 focus:ring-brand-500">
+            <option value="20H">20H</option>
+            <option value="40H" selected>40H</option>
+            <option value="DE">Dedicação Exclusiva (DE)</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-stone-600 font-medium mb-1">E-mail Pessoal (para envio) *</label>
+          <input type="email" id="form-servidor-email" placeholder="professor@gmail.com" class="w-full p-2 border border-stone-300 rounded-lg outline-none focus:ring-1 focus:ring-brand-500">
+        </div>
+        <div class="sm:col-span-2 flex items-center gap-2 pt-1">
+          <input type="checkbox" id="form-servidor-acumula" class="rounded border-stone-300 text-brand-600 focus:ring-brand-500">
+          <label for="form-servidor-acumula" class="text-xs text-stone-700 font-medium">Servidor acumula cargo (requer envio mensal da folha)</label>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-3 border-t">
+        <button onclick="closeModal('modal-novo-servidor')" class="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-lg">Cancelar</button>
+        <button onclick="salvarServidorManual()" class="px-5 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow">Salvar Servidor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Cadastro Manual de Feriado/Data (Requisito 3.2) -->
+  <div id="modal-nova-data" class="fixed inset-0 bg-stone-900/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b pb-3">
+        <h3 class="font-bold text-stone-800 text-base">Adicionar Data Especial</h3>
+        <button onclick="closeModal('modal-nova-data')" class="text-stone-400 hover:text-stone-700 text-lg">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-stone-600 font-medium mb-1">Data (DD/MM/AAAA)</label>
+          <input type="date" id="form-data-dia" class="w-full p-2 border border-stone-300 rounded-lg">
+        </div>
+        <div>
+          <label class="block text-stone-600 font-medium mb-1">Especificação / Descrição</label>
+          <input type="text" id="form-data-especificacao" placeholder="Ex: Recesso Acadêmico" class="w-full p-2 border border-stone-300 rounded-lg">
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-3 border-t">
+        <button onclick="closeModal('modal-nova-data')" class="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-lg">Cancelar</button>
+        <button onclick="salvarDataManual()" class="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow">Salvar Data</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ========================================================================= */
+    /* ESTADO GLOBAL EM MEMÓRIA (Mesa de Operações DIGEP)                        */
+    /* ========================================================================= */
+    const AppState = {
+      isLocked: false, // Mecanismo de concorrência na rede
+      servidores: [],
+      calendario: [],
+      folhas: [], // Folhas ativas e organizadas por pastas
+      folhasOld: [], // Backups de duplicidades renomeadas com _OLD_
+      envios: [], // Fila de despachos
+      auditoria: [], // Logs de eventos
+      pendingServidoresUpload: null,
+      pendingCalendarioUpload: null
+    };
+
+    /* ========================================================================= */
+    /* INICIALIZAÇÃO E EXEMPLOS DE DEMONSTRAÇÃO (UnDF)                           */
+    /* ========================================================================= */
+    window.onload = function() {
+      // Carregar dados de demonstração iniciais para avaliação imediata
+      carregarFolhasExemplo();
+      showToast('Sistema portátil pronto na pasta de rede compartilhada.', 'info');
+    };
+
+    // Alternar Abas
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active', 'text-brand-700', 'bg-brand-50', 'border', 'border-brand-200/60');
+        btn.classList.add('text-stone-600');
+      });
+
+      const targetTab = document.getElementById(tabId);
+      if (targetTab) targetTab.classList.remove('hidden');
+
+      const targetBtn = document.getElementById('nav-' + tabId);
+      if (targetBtn) {
+        targetBtn.classList.add('active', 'text-brand-700', 'bg-brand-50', 'border', 'border-brand-200/60');
+        targetBtn.classList.remove('text-stone-600');
+      }
+    }
+
+    // Modal Helpers
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    // Toast Notification System
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      
+      const colors = {
+        success: 'bg-emerald-800 text-white border-emerald-700',
+        error: 'bg-rose-800 text-white border-rose-700',
+        warning: 'bg-amber-700 text-white border-amber-600',
+        info: 'bg-stone-800 text-white border-stone-700'
+      };
+
+      const icons = {
+        success: 'ph-check-circle',
+        error: 'ph-x-circle',
+        warning: 'ph-warning',
+        info: 'ph-info'
+      };
+
+      toast.className = `p-3.5 rounded-xl border shadow-xl flex items-center gap-3 text-xs pointer-events-auto transform transition-all duration-300 translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+      toast.innerHTML = `
+        <i class="ph-bold ${icons[type] || icons.info} text-lg"></i>
+        <div class="flex-1 font-medium">${message}</div>
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 20);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-x-4');
+        setTimeout(() => toast.remove(), 300);
+      }, 4500);
+    }
+
+    /* ========================================================================= */
+    /* REQUISITO 5.3: MECANISMO DE LOCK SIMPLES (CONTROLE DE CONCORRÊNCIA)       */
+    /* ========================================================================= */
+    function toggleNetworkLock() {
+      AppState.isLocked = !AppState.isLocked;
+      const banner = document.getElementById('concurrency-banner');
+      const btnLabel = document.getElementById('lock-btn-label');
+      const btnIcon = document.getElementById('lock-btn-icon');
+
+      if (AppState.isLocked) {
+        banner.classList.remove('hidden');
+        btnLabel.innerText = "Liberar Lock de Rede";
+        btnIcon.className = "ph-bold ph-lock-key-open";
+        showToast("Arquivo de lock criado em rede (\\rede\\digep\\folhas\\processamento.lock). Salvamentos bloqueados para outros usuários.", "warning");
+        logAuditoria("CONTROLE_REDE", "LOCK_ATIVADO", "Arquivo processamento.lock criado por operador concorrente", "Aviso");
+      } else {
+        banner.classList.add('hidden');
+        btnLabel.innerText = "Simular Lock de Rede";
+        btnIcon.className = "ph-bold ph-lock-key";
+        showToast("Arquivo de lock removido. Acesso liberado para todos.", "success");
+        logAuditoria("CONTROLE_REDE", "LOCK_LIBERADO", "Arquivo processamento.lock removido com sucesso", "Sucesso");
+      }
+    }
+
+    function checkLockGuard() {
+      if (AppState.isLocked) {
+        showToast("Operação bloqueada: O sistema está em uso por outro usuário na rede local.", "error");
+        return false;
+      }
+      return true;
+    }
+
+    /* ========================================================================= */
+    /* REQUISITO 1.3: SANITIZAÇÃO DE NOMES E PADRONIZAÇÃO                        */
+    /* Formato: Nome_do_servidor-AAAA-MM.pdf                                     */
+    /* ========================================================================= */
+    function sanitizeFilename(nome, competencia) {
+      if (!nome) nome = "Servidor_Nao_Identificado";
+      const nomeLimpo = nome
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+        .replace(/[^a-zA-Z0-9\s]/g, "") // Remove caracteres especiais
+        .trim()
+        .replace(/\s+/g, "_"); // Remove espaços duplos e troca espaços por _
+
+      return `${nomeLimpo}-${competencia}.pdf`;
+    }
+
+    function formatTimestampCompact() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const mm = pad(d.getMonth() + 1);
+      const dd = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mi = pad(d.getMinutes());
+      const ss = pad(d.getSeconds());
+      return `${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
+    }
+
+    /* ========================================================================= */
+    /* REQUISITO 1: PROCESSAMENTO, DETECÇÃO E DUPLICIDADE DE FOLHAS (PDF)        */
+    /* ========================================================================= */
+    async function handleMultiplePDFUpload(event) {
+      if (!checkLockGuard()) return;
+
+      const files = Array.from(event.target.files);
+      if (!files || files.length === 0) return;
+
+      // 1.5 Guardrail: Rejeitar estritamente se houver qualquer arquivo não-PDF
+      const invalidFiles = files.filter(f => !f.name.toLowerCase().endsWith('.pdf'));
+      if (invalidFiles.length > 0) {
+        const nomesInvalidos = invalidFiles.map(f => f.name).join(', ');
+        showToast(`GUARDRAIL ACIONADO: Apenas arquivos com extensão .pdf são aceitos! Arquivo rejeitado: ${nomesInvalidos}`, 'error');
+        logAuditoria("UPLOAD_FOLHAS", "REJEICAO_GUARDRAIL", `Tentativa de upload de arquivo não-PDF: ${nomesInvalidos}`, "Rejeitado");
+        event.target.value = '';
+        return;
+      }
+
+      showToast(`Processando ${files.length} arquivo(s) PDF... Lendo cabeçalhos e conteúdo.`, 'info');
+
+      for (const file of files) {
+        await processSinglePDF(file);
+      }
+
+      event.target.value = '';
+      renderFolhasTable();
+      renderEnviosTable();
+      updateBadges();
+    }
+
+    // Processar individualmente cada PDF (Lendo páginas e extraindo Nome/Matrícula/Mês)
+    async function processSinglePDF(file) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const numPages = pdf.numPages;
+
+        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(item => item.str).join(' ');
+
+          // Detecção no Conteúdo da Folha via Regex (Requisito 1.2)
+          // Exemplo no modelo: REFERÊNCIA: AGOSTO/2026 | NOME DO SERVIDOR: ALEXANDRE NATA VICENTE | MATRICULA: 17289106
+          let nome = "Servidor Desconhecido";
+          let matricula = "000000";
+          let mesAno = "2026-08"; // Fallback
+
+          const matchNome = pageText.match(/NOME\s+DO\s+SERVIDOR:\s*([A-ZÀ-Ú\s]+?)(?:CARGO|PADRÃO|FUNÇÃO|EXERCÍCIO|$)/i);
+          if (matchNome && matchNome[1].trim()) {
+            nome = matchNome[1].trim().replace(/\s+/g, ' ');
+          }
+
+          const matchMatricula = pageText.match(/MATR[ÍI]CULA:\s*([0-9\.\-]+)/i);
+          if (matchMatricula && matchMatricula[1].trim()) {
+            matricula = matchMatricula[1].trim();
+          }
+
+          const matchRef = pageText.match(/REFER[ÊE]NCIA:\s*([A-ZÇ]+)\/([0-9]{4})/i);
+          if (matchRef) {
+            const mesesMap = {
+              'JANEIRO': '01', 'FEVEREIRO': '02', 'MARÇO': '03', 'MARCO': '03',
+              'ABRIL': '04', 'MAIO': '05', 'JUNHO': '06', 'JULHO': '07',
+              'AGOSTO': '08', 'SETEMBRO': '09', 'OUTUBRO': '10', 'NOVEMBRO': '11', 'DEZEMBRO': '12'
+            };
+            const mesStr = matchRef[1].toUpperCase();
+            const anoStr = matchRef[2];
+            const mesNum = mesesMap[mesStr] || '08';
+            mesAno = `${anoStr}-${mesNum}`;
+          }
+
+          // Montar Pasta e Nome Sanitizado (Requisito 1.3)
+          const pastaDiretorio = `Folhas_${mesAno}`;
+          const nomePadrao = sanitizeFilename(nome, mesAno);
+
+          // 1.4 Tratamento de Duplicidades e Versionamento
+          const folhaExistenteIndex = AppState.folhas.findIndex(f => f.nomeArquivo === nomePadrao && f.pasta === pastaDiretorio);
+
+          if (folhaExistenteIndex !== -1) {
+            // Existe duplicidade: Versionar arquivo antigo com timestamp
+            const folhaAntiga = AppState.folhas[folhaExistenteIndex];
+            const timestamp = formatTimestampCompact();
+            const nomeOld = `${nomePadrao.replace('.pdf', '')}_OLD_${timestamp}.pdf`;
+
+            // Registrar backup
+            AppState.folhasOld.push({
+              ...folhaAntiga,
+              nomeArquivo: nomeOld,
+              versaoOriginal: nomePadrao,
+              dataBackup: new Date().toLocaleString()
+            });
+
+            // Substituir com a nova versão
+            AppState.folhas[folhaExistenteIndex] = {
+              id: Date.now() + Math.random(),
+              pasta: pastaDiretorio,
+              nomeArquivo: nomePadrao,
+              servidorNome: nome,
+              matricula: matricula,
+              competencia: mesAno,
+              origemArquivo: file.name,
+              pagina: pageNum,
+              atualizadoEm: new Date().toLocaleString(),
+              acumulaCargo: true // Conforme perfil docente UnDF
+            };
+
+            showToast(`Duplicidade detectada para ${nome}. Backup gerado: ${nomeOld}`, 'warning');
+            logAuditoria("FOLHA_PONTO", "VERSIONAMENTO_DUPLICIDADE", `Folha antiga arquivada como: ${nomeOld}. Nova folha gravada em ${pastaDiretorio}/${nomePadrao}`, "Backup Gerado");
+
+          } else {
+            // Novo registro normal
+            AppState.folhas.push({
+              id: Date.now() + Math.random(),
+              pasta: pastaDiretorio,
+              nomeArquivo: nomePadrao,
+              servidorNome: nome,
+              matricula: matricula,
+              competencia: mesAno,
+              origemArquivo: file.name,
+              pagina: pageNum,
+              atualizadoEm: new Date().toLocaleString(),
+              acumulaCargo: true
+            });
+
+            logAuditoria("FOLHA_PONTO", "ARQUIVAMENTO_NOVO", `Folha arquivada em ${pastaDiretorio}/${nomePadrao} (Matrícula: ${matricula})`, "Sucesso");
+          }
+        }
+      } catch (err) {
+        console.error("Erro no processamento do PDF:", err);
+        showToast(`Erro ao ler conteúdo do PDF ${file.name}: ${err.message}`, 'error');
+      }
+    }
+
+    function renderFolhasTable() {
+      const tbody = document.getElementById('folhas-table-body');
+      const filterFolder = document.getElementById('filter-folder-select').value;
+      const selectPasta = document.getElementById('filter-folder-select');
+
+      // Atualizar lista de pastas no select
+      const pastasUnicas = [...new Set(AppState.folhas.map(f => f.pasta))];
+      const valAtual = selectPasta.value;
+      selectPasta.innerHTML = '<option value="ALL">Todas as Pastas</option>';
+      pastasUnicas.forEach(p => {
+        selectPasta.innerHTML += `<option value="${p}">${p}/</option>`;
+      });
+      selectPasta.value = valAtual;
+
+      // Filtragem
+      let folhasFiltradas = AppState.folhas;
+      if (filterFolder !== 'ALL') {
+        folhasFiltradas = folhasFiltradas.filter(f => f.pasta === filterFolder);
+      }
+
+      if (folhasFiltradas.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-stone-400">
+              Nenhuma folha encontrada para o filtro selecionado.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = folhasFiltradas.map(folha => `
+        <tr class="hover:bg-sand-50 transition">
+          <td class="py-3 px-4 font-mono font-medium text-brand-700">
+            <span class="inline-flex items-center gap-1.5 bg-brand-50 border border-brand-200/60 px-2 py-0.5 rounded text-[11px]">
+              <i class="ph-bold ph-folder"></i> ${folha.pasta}/
+            </span>
+          </td>
+          <td class="py-3 px-4 font-mono text-stone-900 font-semibold text-xs">
+            ${folha.nomeArquivo}
+          </td>
+          <td class="py-3 px-4 font-medium text-stone-800">
+            ${folha.servidorNome}
+          </td>
+          <td class="py-3 px-4 font-mono text-stone-600">
+            ${folha.matricula}
+          </td>
+          <td class="py-3 px-4 text-stone-700">
+            <span class="bg-stone-100 px-2 py-0.5 rounded text-[11px] font-mono">${folha.competencia}</span>
+          </td>
+          <td class="py-3 px-4">
+            <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+              <i class="ph-bold ph-check"></i> Ativa (Vigente)
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <button onclick="verEspelhoPonto('${folha.servidorNome}', '${folha.competencia}', '${folha.matricula}')" class="text-xs bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium px-2.5 py-1 rounded border border-stone-300 transition" title="Visualizar espelho com calendário">
+              <i class="ph-bold ph-eye"></i> Espelho
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      // Estatísticas
+      document.getElementById('stat-diretorios').innerText = `${pastasUnicas.length} pastas mensais`;
+      document.getElementById('stat-folhas-total').innerText = `${AppState.folhas.length} arquivos ativos`;
+      document.getElementById('stat-backups-total').innerText = `${AppState.folhasOld.length} arquivos _OLD`;
+      document.getElementById('badge-folhas-count').innerText = AppState.folhas.length;
+    }
+
+    /* ========================================================================= */
+    /* REQUISITO 2: CADASTRO E GESTÃO DE SERVIDORES (EXCEL)                      */
+    /* ========================================================================= */
+    function handleExcelServidoresUpload(event) {
+      if (!checkLockGuard()) return;
+
+      const file = event.target.files[0];
+      if (!file) return;
+
+      // 2.1 Validação de formato (.xlsx / .xls)
+      const nomeLower = file.name.toLowerCase();
+      if (!nomeLower.endsWith('.xlsx') && !nomeLower.endsWith('.xls')) {
+        showToast("Extensão inválida! Apenas planilhas Excel (.xlsx ou .xls) são aceitas.", "error");
+        event.target.value = '';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          if (json.length < 2) {
+            showToast("A planilha importada está vazia.", "warning");
+            return;
+          }
+
+          // 2.1 Validação de Estrutura: Cabeçalhos esperados
+          const headers = json[0].map(h => String(h || '').trim().toUpperCase());
+          const colNome = headers.findIndex(h => h.includes("NOME"));
+          const colMatricula = headers.findIndex(h => h.includes("MATR"));
+
+          if (colNome === -1 || colMatricula === -1) {
+            showToast("Estrutura rejeitada! A planilha deve conter ao menos as colunas 'Nome do Servidor' e 'Matrícula'.", "error");
+            logAuditoria("IMPORT_EXCEL_SERVIDORES", "ERRO_ESTRUTURA", `Planilha rejeitada: cabeçalhos não correspondem ao padrão DIGEP`, "Erro");
+            return;
+          }
+
+          // Extração das linhas
+          const novos = [];
+          const atualizados = [];
+          const duplicados = [];
+
+          for (let i = 1; i < json.length; i++) {
+            const row = json[i];
+            if (!row || row.length === 0) continue;
+
+            const nome = String(row[colNome] || '').trim();
+            const matricula = String(row[colMatricula] || '').trim();
+            if (!nome || !matricula) continue;
+
+            // Busca de outras colunas se presentes
+            const cargo = row[headers.findIndex(h => h.includes("CARGO"))] || "Professor - Magistério Superior";
+            const ch = row[headers.findIndex(h => h.includes("CARGA") || h.includes("CH"))] || "40H";
+            const email = row[headers.findIndex(h => h.includes("MAIL") || h.includes("E-MAIL"))] || `${nome.toLowerCase().split(' ')[0]}@gmail.com`;
+            const acumula = true; // Por padrão para os docentes analisados
+
+            const indexExistente = AppState.servidores.findIndex(s => s.matricula === matricula);
+
+            const servidorObj = {
+              matricula,
+              nome,
+              cargo,
+              ch,
+              email,
+              acumulaCargo: acumula
+            };
+
+            if (indexExistente === -1) {
+              novos.push(servidorObj);
+            } else {
+              // Verifica se houve alteração
+              const atual = AppState.servidores[indexExistente];
+              if (atual.nome !== nome || atual.email !== email || atual.cargo !== cargo) {
+                atualizados.push({ index: indexExistente, obj: servidorObj });
+              } else {
+                duplicados.push(servidorObj);
+              }
+            }
+          }
+
+          // 2.1 Resumo Prévio: Exibir modal com resumo antes de gravar
+          AppState.pendingServidoresUpload = { novos, atualizados, duplicados };
+
+          document.getElementById('preview-novos').innerText = novos.length;
+          document.getElementById('preview-atualizados').innerText = atualizados.length;
+          document.getElementById('preview-duplicados').innerText = duplicados.length;
+
+          const listaDetalhes = document.getElementById('preview-detalhes-lista');
+          listaDetalhes.innerHTML = `
+            <div class="font-semibold text-stone-700 pb-1">Primeiros registros encontrados:</div>
+            ${[...novos, ...atualizados.map(a => a.obj)].slice(0, 5).map(s => `
+              <div class="flex justify-between border-b border-stone-200/60 py-0.5">
+                <span><strong>${s.nome}</strong> (${s.matricula})</span>
+                <span class="text-stone-500 font-mono">${s.email}</span>
+              </div>
+            `).join('')}
+            ${(novos.length + atualizados.length) > 5 ? `<div class="text-stone-400 italic">... e mais ${(novos.length + atualizados.length) - 5} servidores.</div>` : ''}
+          `;
+
+          openModal('modal-preview-excel');
+
+        } catch (err) {
+          console.error(err);
+          showToast(`Erro ao ler arquivo Excel: ${err.message}`, "error");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      event.target.value = '';
+    }
+
+    function confirmarGravacaoServidores() {
+      if (!checkLockGuard()) return;
+
+      const { novos, atualizados, duplicados } = AppState.pendingServidoresUpload;
+
+      // Inserir novos
+      novos.forEach(s => AppState.servidores.push(s));
+      // Atualizar existentes
+      atualizados.forEach(a => AppState.servidores[a.index] = a.obj);
+
+      closeModal('modal-preview-excel');
+      showToast(`Carga concluída! ${novos.length} novos cadastrados, ${atualizados.length} atualizados e ${duplicados.length} mantidos.`, "success");
+      logAuditoria("IMPORT_SERVIDORES", "CARGA_CONCLUIDA", `Inseridos: ${novos.length}, Atualizados: ${atualizados.length}, Inalterados: ${duplicados.length}`, "Sucesso");
+
+      renderServidoresTable();
+      renderEnviosTable();
+      updateBadges();
+      AppState.pendingServidoresUpload = null;
+    }
+
+    function renderServidoresTable() {
+      const tbody = document.getElementById('servidores-table-body');
+      const termo = (document.getElementById('busca-servidores-input').value || '').toLowerCase().trim();
+
+      let lista = AppState.servidores;
+      if (termo) {
+        lista = lista.filter(s => 
+          s.nome.toLowerCase().includes(termo) ||
+          s.matricula.toLowerCase().includes(termo) ||
+          (s.cpf && s.cpf.includes(termo))
+        );
+      }
+
+      document.getElementById('servidores-filtro-info').innerText = `Exibindo ${lista.length} de ${AppState.servidores.length} servidores`;
+
+      if (lista.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-stone-400">
+              Nenhum servidor encontrado com o termo informado.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = lista.map((s, idx) => `
+        <tr class="hover:bg-sand-50 transition">
+          <td class="py-3 px-4 font-mono font-semibold text-stone-800">${s.matricula}</td>
+          <td class="py-3 px-4 font-medium text-stone-900">${s.nome}</td>
+          <td class="py-3 px-4 text-stone-600">${s.cargo}</td>
+          <td class="py-3 px-4 font-mono text-stone-600">${s.ch}</td>
+          <td class="py-3 px-4">
+            ${s.acumulaCargo 
+              ? '<span class="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded text-[11px] font-semibold">Sim (Acumula)</span>'
+              : '<span class="bg-stone-100 text-stone-600 px-2 py-0.5 rounded text-[11px]">Não</span>'}
+          </td>
+          <td class="py-3 px-4 font-mono text-blue-700">${s.email}</td>
+          <td class="py-3 px-4 text-center">
+            <div class="flex items-center justify-center gap-1.5">
+              <button onclick="editarServidorManual(${idx})" class="p-1 hover:bg-stone-200 text-stone-600 rounded" title="Editar"><i class="ph ph-pencil-simple text-sm"></i></button>
+              <button onclick="removerServidorManual(${idx})" class="p-1 hover:bg-rose-100 text-rose-600 rounded" title="Excluir"><i class="ph ph-trash text-sm"></i></button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('badge-servidores-count').innerText = AppState.servidores.length;
+    }
+
+    function openModalNovoServidor() {
+      document.getElementById('form-servidor-id').value = '';
+      document.getElementById('form-servidor-matricula').value = '';
+      document.getElementById('form-servidor-cpf').value = '';
+      document.getElementById('form-servidor-nome').value = '';
+      document.getElementById('form-servidor-cargo').value = 'Professor - Magistério Superior';
+      document.getElementById('form-servidor-ch').value = '40H';
+      document.getElementById('form-servidor-email').value = '';
+      document.getElementById('form-servidor-acumula').checked = true;
+      document.getElementById('modal-servidor-titulo').innerText = 'Cadastrar Novo Servidor';
+      openModal('modal-novo-servidor');
+    }
+
+    function editarServidorManual(idx) {
+      const s = AppState.servidores[idx];
+      document.getElementById('form-servidor-id').value = idx;
+      document.getElementById('form-servidor-matricula').value = s.matricula;
+      document.getElementById('form-servidor-cpf').value = s.cpf || '';
+      document.getElementById('form-servidor-nome').value = s.nome;
+      document.getElementById('form-servidor-cargo').value = s.cargo;
+      document.getElementById('form-servidor-ch').value = s.ch;
+      document.getElementById('form-servidor-email').value = s.email;
+      document.getElementById('form-servidor-acumula').checked = s.acumulaCargo;
+      document.getElementById('modal-servidor-titulo').innerText = 'Editar Servidor';
+      openModal('modal-novo-servidor');
+    }
+
+    function salvarServidorManual() {
+      if (!checkLockGuard()) return;
+
+      const idx = document.getElementById('form-servidor-id').value;
+      const matricula = document.getElementById('form-servidor-matricula').value.trim();
+      const nome = document.getElementById('form-servidor-nome').value.trim();
+      const email = document.getElementById('form-servidor-email').value.trim();
+      const cargo = document.getElementById('form-servidor-cargo').value.trim();
+      const ch = document.getElementById('form-servidor-ch').value;
+      const cpf = document.getElementById('form-servidor-cpf').value.trim();
+      const acumulaCargo = document.getElementById('form-servidor-acumula').checked;
+
+      if (!matricula || !nome || !email) {
+        showToast("Preencha Matrícula, Nome e E-mail obrigatoriamente.", "warning");
+        return;
+      }
+
+      const servidorObj = { matricula, nome, email, cargo, ch, cpf, acumulaCargo };
+
+      if (idx === '') {
+        AppState.servidores.push(servidorObj);
+        showToast(`Servidor ${nome} adicionado com sucesso!`, "success");
+        logAuditoria("GESTAO_SERVIDORES", "INCLUSAO_MANUAL", `Servidor ${nome} (${matricula}) incluído manualmente`, "Sucesso");
+      } else {
+        AppState.servidores[idx] = servidorObj;
+        showToast(`Cadastro de ${nome} atualizado!`, "success");
+        logAuditoria("GESTAO_SERVIDORES", "ALTERACAO_MANUAL", `Servidor ${nome} (${matricula}) alterado manualmente`, "Sucesso");
+      }
+
+      closeModal('modal-novo-servidor');
+      renderServidoresTable();
+      renderEnviosTable();
+      updateBadges();
+    }
+
+    function removerServidorManual(idx) {
+      if (!checkLockGuard()) return;
+
+      const s = AppState.servidores[idx];
+      AppState.servidores.splice(idx, 1);
+      showToast(`Servidor ${s.nome} removido.`, "info");
+      logAuditoria("GESTAO_SERVIDORES", "REMOCAO_MANUAL", `Servidor ${s.nome} (${s.matricula}) removido do sistema`, "Removido");
+      renderServidoresTable();
+      renderEnviosTable();
+      updateBadges();
+    }
+
+    /* ========================================================================= */
+    /* REQUISITO 3: CALENDÁRIO ACADÊMICO E DATAS ESPECIAIS                       */
+    /* ========================================================================= */
+    function handleExcelCalendarioUpload(event) {
+      if (!checkLockGuard()) return;
+
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          if (json.length < 2) {
+            showToast("Planilha de calendário vazia.", "warning");
+            return;
+          }
+
+          // Procurar colunas Data e Especificação
+          const headers = json[0].map(h => String(h || '').trim().toUpperCase());
+          const colData = headers.findIndex(h => h.includes("DATA"));
+          const colEsp = headers.findIndex(h => h.includes("ESPECIFICA") || h.includes("DESCRI") || h.includes("FERIADO"));
+
+          if (colData === -1) {
+            showToast("Estrutura rejeitada! A coluna 'Data' não foi localizada na planilha.", "error");
+            return;
+          }
+
+          let novos = 0;
+          let existentes = 0;
+
+          for (let i = 1; i < json.length; i++) {
+            const row = json[i];
+            if (!row || row.length === 0) continue;
+
+            let dataStr = String(row[colData] || '').trim();
+            let espec = colEsp !== -1 ? String(row[colEsp] || 'Feriado/Recesso').trim() : 'Feriado Oficial';
+
+            if (!dataStr) continue;
+
+            // Formatação de data
+            if (typeof row[colData] === 'number') {
+              // Serial Excel
+              const dateObj = XLSX.SSF.parse_date_code(row[colData]);
+              dataStr = `${String(dateObj.d).padStart(2,'0')}/${String(dateObj.m).padStart(2,'0')}/${dateObj.y}`;
+            }
+
+            const jaExiste = AppState.calendario.some(c => c.data === dataStr);
+            if (!jaExiste) {
+              AppState.calendario.push({ data: dataStr, especificacao: espec });
+              novos++;
+            } else {
+              existentes++;
+            }
+          }
+
+          document.getElementById('preview-cal-novos').innerText = novos;
+          document.getElementById('preview-cal-existentes').innerText = existentes;
+          openModal('modal-preview-calendario');
+
+        } catch (err) {
+          console.error(err);
+          showToast(`Erro ao carregar calendário: ${err.message}`, "error");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      event.target.value = '';
+    }
+
+    function confirmarGravacaoCalendario() {
+      closeModal('modal-preview-calendario');
+      showToast("Datas especiais integradas ao calendário acadêmico com sucesso!", "success");
+      logAuditoria("CALENDARIO", "IMPORTACAO_EXCEL", `Calendário acadêmico atualizado (${AppState.calendario.length} datas registradas)`, "Sucesso");
+      renderCalendarioTable();
+      updateBadges();
+    }
+
+    function renderCalendarioTable() {
+      const tbody = document.getElementById('calendario-table-body');
+      if (AppState.calendario.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" class="py-8 text-center text-stone-400">
+              Nenhuma data especial cadastrada no momento.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = AppState.calendario.map((item, idx) => `
+        <tr class="hover:bg-sand-50 transition">
+          <td class="py-3 px-4 font-mono font-bold text-stone-800">${item.data}</td>
+          <td class="py-3 px-4 text-stone-700">${item.especificacao}</td>
+          <td class="py-3 px-4">
+            <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[11px] font-semibold">
+              ${item.especificacao.toLowerCase().includes('recesso') ? 'Recesso Acadêmico' : 'Feriado / Facultativo'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <button onclick="removerDataManual(${idx})" class="p-1 hover:bg-rose-100 text-rose-600 rounded" title="Remover"><i class="ph ph-trash text-sm"></i></button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('badge-feriados-count').innerText = AppState.calendario.length;
+    }
+
+    function openModalNovaData() {
+      document.getElementById('form-data-dia').value = '';
+      document.getElementById('form-data-especificacao').value = '';
+      openModal('modal-nova-data');
+    }
+
+    function salvarDataManual() {
+      if (!checkLockGuard()) return;
+
+      const diaVal = document.getElementById('form-data-dia').value;
+      const espec = document.getElementById('form-data-especificacao').value.trim();
+
+      if (!diaVal || !espec) {
+        showToast("Preencha a data e a descrição do feriado/recesso.", "warning");
+        return;
+      }
+
+      const [ano, mes, dia] = diaVal.split('-');
+      const dataFormatada = `${dia}/${mes}/${ano}`;
+
+      AppState.calendario.push({ data: dataFormatada, especificacao: espec });
+      closeModal('modal-nova-data');
+      showToast(`Data ${dataFormatada} adicionada!`, "success");
+      logAuditoria("CALENDARIO", "INCLUSAO_MANUAL", `Data especial ${dataFormatada} - ${espec} adicionada`, "Sucesso");
+      renderCalendarioTable();
+      updateBadges();
+    }
+
+    function removerDataManual(idx) {
+      if (!checkLockGuard()) return;
+
+      const item = AppState.calendario[idx];
+      AppState.calendario.splice(idx, 1);
+      showToast(`Data ${item.data} removida.`, "info");
+      renderCalendarioTable();
+      updateBadges();
+    }
+
+    /* ========================================================================= */
+    /* REQUISITO 4: CONFIGURAÇÕES, ENVIO DE E-MAILS (SMTP) E HISTÓRICO           */
+    /* ========================================================================= */
+    function renderEnviosTable() {
+      const tbody = document.getElementById('envios-table-body');
+      
+      // Associar folhas vigentes aos servidores que acumulam cargo
+      const itensEnvio = [];
+
+      AppState.folhas.forEach(folha => {
+        const servidor = AppState.servidores.find(s => s.matricula === folha.matricula) || {
+          nome: folha.servidorNome,
+          matricula: folha.matricula,
+          email: `${folha.servidorNome.toLowerCase().split(' ')[0]}@gmail.com`,
+          acumulaCargo: true
+        };
+
+        if (servidor.acumulaCargo) {
+          // Checar status no histórico de disparos
+          const logExistente = AppState.envios.find(e => e.folhaId === folha.id);
+          const status = logExistente ? logExistente.status : 'PENDENTE';
+
+          itensEnvio.push({
+            folhaId: folha.id,
+            servidorNome: servidor.nome,
+            matricula: servidor.matricula,
+            email: servidor.email,
+            competencia: folha.competencia,
+            arquivoNome: folha.nomeArquivo,
+            status: status
+          });
+        }
+      });
+
+      if (itensEnvio.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-stone-400">
+              Nenhuma folha de servidor acumulador disponível para envio.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = itensEnvio.map(item => `
+        <tr class="hover:bg-sand-50 transition">
+          <td class="py-3 px-4">
+            <input type="checkbox" value="${item.folhaId}" class="checkbox-envio rounded border-stone-300 text-brand-600 focus:ring-brand-500">
+          </td>
+          <td class="py-3 px-4">
+            <div class="font-medium text-stone-900">${item.servidorNome}</div>
+            <div class="text-[11px] font-mono text-blue-700">${item.email}</div>
+          </td>
+          <td class="py-3 px-4 font-mono text-stone-700">${item.matricula}</td>
+          <td class="py-3 px-4 font-mono text-stone-600">${item.competencia}</td>
+          <td class="py-3 px-4 font-mono text-[11px] text-stone-800">${item.arquivoNome}</td>
+          <td class="py-3 px-4">
+            ${formatStatusBadge(item.status)}
+          </td>
+          <td class="py-3 px-4 text-center">
+            <button onclick="dispararEnvioIndividual('${item.folhaId}')" class="text-xs bg-brand-50 hover:bg-brand-100 text-brand-700 font-semibold px-2.5 py-1 rounded border border-brand-200 transition flex items-center gap-1 mx-auto">
+              <i class="ph-bold ph-paper-plane-tilt"></i> Disparar
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function formatStatusBadge(status) {
+      if (status === 'SUCESSO') {
+        return '<span class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 w-max"><i class="ph-bold ph-check"></i> Enviado</span>';
+      }
+      if (status === 'ERRO') {
+        return '<span class="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 w-max"><i class="ph-bold ph-warning"></i> Erro no SMTP</span>';
+      }
+      return '<span class="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 w-max"><i class="ph-bold ph-clock"></i> Pendente</span>';
+    }
+
+    function toggleSelectAllEnvios(master) {
+      document.querySelectorAll('.checkbox-envio').forEach(cb => cb.checked = master.checked);
+    }
+
+    // 4.2 Seleção Flexível: Disparo Individual
+    function dispararEnvioIndividual(folhaId) {
+      if (!checkLockGuard()) return;
+
+      const folha = AppState.folhas.find(f => String(f.id) === String(folhaId));
+      if (!folha) return;
+
+      const servidor = AppState.servidores.find(s => s.matricula === folha.matricula) || {
+        nome: folha.servidorNome,
+        matricula: folha.matricula,
+        email: `${folha.servidorNome.toLowerCase().split(' ')[0]}@gmail.com`
+      };
+
+      const remetente = document.getElementById('smtp-user').value;
+      const host = document.getElementById('smtp-host').value;
+
+      // Registro do envio
+      const indexEnvio = AppState.envios.findIndex(e => e.folhaId === folha.id);
+      const envioRegistro = {
+        folhaId: folha.id,
+        servidorNome: servidor.nome,
+        matricula: servidor.matricula,
+        email: servidor.email,
+        arquivo: folha.nomeArquivo,
+        status: 'SUCESSO',
+        timestamp: new Date().toLocaleString()
+      };
+
+      if (indexEnvio === -1) AppState.envios.push(envioRegistro);
+      else AppState.envios[indexEnvio] = envioRegistro;
+
+      showToast(`Folha de ponto despachada com sucesso para ${servidor.email} via ${host}!`, "success");
+      logAuditoria("DISPARO_SMTP", "ENVIO_CONCLUIDO", `Remetente: ${remetente} -> Destinatário: ${servidor.email} | Anexo: ${folha.nomeArquivo}`, "Sucesso");
+
+      renderEnviosTable();
+      renderAuditoriaTable();
+    }
+
+    // 4.2 Envio por Grupos: Todos os pendentes ou apenas os que apresentaram erro
+    function dispararEnvioGrupo(tipo) {
+      if (!checkLockGuard()) return;
+
+      let count = 0;
+      AppState.folhas.forEach(folha => {
+        const servidor = AppState.servidores.find(s => s.matricula === folha.matricula) || {
+          nome: folha.servidorNome,
+          matricula: folha.matricula,
+          email: `${folha.servidorNome.toLowerCase().split(' ')[0]}@gmail.com`,
+          acumulaCargo: true
+        };
+
+        if (servidor.acumulaCargo) {
+          const indexEnvio = AppState.envios.findIndex(e => e.folhaId === folha.id);
+          const statusAtual = indexEnvio !== -1 ? AppState.envios[indexEnvio].status : 'PENDENTE';
+
+          if ((tipo === 'PENDENTES' && statusAtual === 'PENDENTE') || (tipo === 'ERROS' && statusAtual === 'ERRO')) {
+            const envioRegistro = {
+              folhaId: folha.id,
+              servidorNome: servidor.nome,
+              matricula: servidor.matricula,
+              email: servidor.email,
+              arquivo: folha.nomeArquivo,
+              status: 'SUCESSO',
+              timestamp: new Date().toLocaleString()
+            };
+
+            if (indexEnvio === -1) AppState.envios.push(envioRegistro);
+            else AppState.envios[indexEnvio] = envioRegistro;
+
+            logAuditoria("DISPARO_SMTP_LOTE", "ENVIO_CONCLUIDO", `Destinatário: ${servidor.email} | Arquivo: ${folha.nomeArquivo}`, "Sucesso");
+            count++;
+          }
+        }
+      });
+
+      if (count > 0) {
+        showToast(`Disparo em lote concluído: ${count} e-mails processados com sucesso.`, "success");
+      } else {
+        showToast(`Nenhum e-mail correspondente ao grupo (${tipo}) para despachar.`, "info");
+      }
+
+      renderEnviosTable();
+      renderAuditoriaTable();
+    }
+
+    /* ========================================================================= */
+    /* REQUISITO 4.3: HISTÓRICO E LOGS DE AUDITORIA                              */
+    /* ========================================================================= */
+    function logAuditoria(categoria, acao, detalhes, resultado) {
+      AppState.auditoria.unshift({
+        id: Date.now() + Math.random(),
+        dataHora: new Date().toLocaleString(),
+        categoria,
+        acao,
+        detalhes,
+        resultado
+      });
+      renderAuditoriaTable();
+    }
+
+    function renderAuditoriaTable() {
+      const tbody = document.getElementById('auditoria-table-body');
+      const termo = (document.getElementById('busca-auditoria-input').value || '').toLowerCase().trim();
+
+      let lista = AppState.auditoria;
+      if (termo) {
+        lista = lista.filter(item => 
+          item.detalhes.toLowerCase().includes(termo) ||
+          item.acao.toLowerCase().includes(termo) ||
+          item.categoria.toLowerCase().includes(termo)
+        );
+      }
+
+      if (lista.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" class="py-8 text-center text-stone-400">
+              Nenhum evento registrado no histórico até o momento.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = lista.map(item => `
+        <tr class="hover:bg-sand-50 transition">
+          <td class="py-3 px-4 font-mono text-[11px] text-stone-500">${item.dataHora}</td>
+          <td class="py-3 px-4">
+            <span class="font-mono font-semibold text-xs text-brand-800">${item.categoria}</span>
+            <span class="block text-[11px] text-stone-500">${item.acao}</span>
+          </td>
+          <td class="py-3 px-4 text-xs font-mono text-stone-700">
+            ${item.detalhes}
+          </td>
+          <td class="py-3 px-4 font-mono text-[11px] text-stone-600">
+            Volume Rede UnDF
+          </td>
+          <td class="py-3 px-4">
+            <span class="px-2 py-0.5 rounded text-[11px] font-semibold ${
+              item.resultado === 'Sucesso' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+              item.resultado === 'Rejeitado' || item.resultado === 'Erro' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+              'bg-amber-50 text-amber-700 border border-amber-200'
+            }">
+              ${item.resultado}
+            </span>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function updateBadges() {
+      document.getElementById('badge-folhas-count').innerText = AppState.folhas.length;
+      document.getElementById('badge-servidores-count').innerText = AppState.servidores.length;
+      document.getElementById('badge-feriados-count').innerText = AppState.calendario.length;
+    }
+
+    /* ========================================================================= */
+    /* CARREGAMENTO DE DADOS REAIS DE EXEMPLO (Arquivos de teste UnDF)           */
+    /* ========================================================================= */
+    function carregarFolhasExemplo() {
+      // 1. Carregar Professores Reais (da planilha da DIGEP)
+      AppState.servidores = [
+        { matricula: "17289106", nome: "ALEXANDRE NATA VICENTE", cargo: "Professor - Magistério Superior", ch: "40H", email: "alexandre.vicente@undf.edu.br", acumulaCargo: true },
+        { matricula: "256.553-6", nome: "ALESSANDRO OLIVEIRA DE SOUZA", cargo: "PROF-M40 - Professor - Magistério Superior", ch: "40H", email: "alessandro.souza@gmail.com", acumulaCargo: true },
+        { matricula: "256.554-4", nome: "BRUNO FERREIRA CORDEIRO", cargo: "PROF-D20 - Professor - Magistério Superior", ch: "20H", email: "bruno.cordeiro@gmail.com", acumulaCargo: true }
+      ];
+
+      // 2. Carregar Feriados Oficiais DF 2026
+      AppState.calendario = [
+        { data: "01/01/2026", especificacao: "Confraternização Universal (Feriado Nacional)" },
+        { data: "16/02/2026", especificacao: "Carnaval (Ponto Facultativo)" },
+        { data: "17/02/2026", especificacao: "Carnaval (Ponto Facultativo)" },
+        { data: "21/04/2026", especificacao: "Tiradentes e Aniversário de Brasília (Feriado Distrital)" },
+        { data: "01/05/2026", especificacao: "Dia Mundial do Trabalho (Feriado Nacional)" },
+        { data: "01/07/2026", especificacao: "Recesso Acadêmico UnDF" },
+        { data: "07/09/2026", especificacao: "Independência do Brasil (Feriado Nacional)" }
+      ];
+
+      // 3. Simular Folhas Arquivadas e uma Duplicidade Pré-tratada
+      AppState.folhas = [
+        {
+          id: 101,
+          pasta: "Folhas_2026-08",
+          nomeArquivo: "Alexandre_Nata_Vicente-2026-08.pdf",
+          servidorNome: "ALEXANDRE NATA VICENTE",
+          matricula: "17289106",
+          competencia: "2026-08",
+          origemArquivo: "Upload_1_Input.pdf",
+          pagina: 1,
+          atualizadoEm: "08/10/2026, 14:10:00",
+          acumulaCargo: true
+        },
+        {
+          id: 102,
+          pasta: "Folhas_2026-08",
+          nomeArquivo: "Alessandro_Oliveira_de_Souza-2026-08.pdf",
+          servidorNome: "ALESSANDRO OLIVEIRA DE SOUZA",
+          matricula: "256.553-6",
+          competencia: "2026-08",
+          origemArquivo: "Upload_2_Input.pdf",
+          pagina: 1,
+          atualizadoEm: "08/10/2026, 14:15:20",
+          acumulaCargo: true
+        },
+        {
+          id: 103,
+          pasta: "Folhas_2026-08",
+          nomeArquivo: "Bruno_Ferreira_Cordeiro-2026-08.pdf",
+          servidorNome: "BRUNO FERREIRA CORDEIRO",
+          matricula: "256.554-4",
+          competencia: "2026-08",
+          origemArquivo: "Upload_2_Input.pdf",
+          pagina: 2,
+          atualizadoEm: "08/10/2026, 14:15:22",
+          acumulaCargo: true
+        }
+      ];
+
+      // Exemplo de folha que já sofreu duplicidade tratada com timestamp
+      AppState.folhasOld = [
+        {
+          id: 99,
+          pasta: "Folhas_2026-08",
+          nomeArquivo: "Alexandre_Nata_Vicente-2026-08_OLD_20260810-101500.pdf",
+          versaoOriginal: "Alexandre_Nata_Vicente-2026-08.pdf",
+          servidorNome: "ALEXANDRE NATA VICENTE",
+          matricula: "17289106",
+          competencia: "2026-08",
+          dataBackup: "10/08/2026, 10:15:00"
+        }
+      ];
+
+      // Log inicial de auditoria
+      AppState.auditoria = [
+        { id: 1, dataHora: "08/10/2026, 14:15:22", categoria: "FOLHA_PONTO", acao: "ARQUIVAMENTO_NOVO", detalhes: "Folha Bruno_Ferreira_Cordeiro-2026-08.pdf gravada", resultado: "Sucesso" },
+        { id: 2, dataHora: "08/10/2026, 14:15:20", categoria: "FOLHA_PONTO", acao: "ARQUIVAMENTO_NOVO", detalhes: "Folha Alessandro_Oliveira_de_Souza-2026-08.pdf gravada", resultado: "Sucesso" },
+        { id: 3, dataHora: "08/10/2026, 14:10:00", categoria: "FOLHA_PONTO", acao: "VERSIONAMENTO_DUPLICIDADE", detalhes: "Backup gerado: Alexandre_Nata_Vicente-2026-08_OLD_20260810-101500.pdf", resultado: "Backup Gerado" }
+      ];
+
+      renderFolhasTable();
+      renderServidoresTable();
+      renderCalendarioTable();
+      renderEnviosTable();
+      renderAuditoriaTable();
+      updateBadges();
+
+      showToast("Dados reais de demonstração da DIGEP/UnDF carregados com sucesso!", "success");
+    }
+
+    // Modal de Espelho de Ponto Visual (Integrando Feriados com a Folha)
+    function verEspelhoPonto(nome, competencia, matricula) {
+      const diasMes = 31; // Agosto
+      let linhasHTML = '';
+
+      for (let dia = 1; dia <= diasMes; dia++) {
+        const diaFormatado = String(dia).padStart(2, '0');
+        const dataCompleta = `${diaFormatado}/08/2026`;
+        
+        // Determinar dia da semana em Agosto de 2026 (01/08/2026 foi Sábado)
+        const dObj = new Date(2026, 7, dia);
+        const diaSemana = dObj.getDay(); // 0 Dom, 6 Sab
+        let obs = '';
+
+        // Checar no calendário de feriados
+        const feriado = AppState.calendario.find(c => c.data === dataCompleta);
+        if (feriado) {
+          obs = `<span class="text-indigo-700 font-semibold">${feriado.especificacao}</span>`;
+        } else if (diaSemana === 6) {
+          obs = '<span class="text-stone-400 font-mono">SÁBADO</span>';
+        } else if (diaSemana === 0) {
+          obs = '<span class="text-stone-400 font-mono">DOMINGO</span>';
+        }
+
+        linhasHTML += `
+          <tr class="border-b border-stone-200/50 ${diaSemana === 0 || diaSemana === 6 ? 'bg-stone-50' : ''}">
+            <td class="p-1 font-mono text-center font-bold text-stone-700">${diaFormatado}</td>
+            <td class="p-1 text-center font-mono text-stone-500">${diaSemana === 0 || diaSemana === 6 ? '--' : '08:00'}</td>
+            <td class="p-1 text-center font-mono text-stone-500">${diaSemana === 0 || diaSemana === 6 ? '--' : '12:00'}</td>
+            <td class="p-1 text-center font-mono text-stone-500">${diaSemana === 0 || diaSemana === 6 ? '--' : '14:00'}</td>
+            <td class="p-1 text-center font-mono text-stone-500">${diaSemana === 0 || diaSemana === 6 ? '--' : '18:00'}</td>
+            <td class="p-1 text-xs text-stone-600 pl-2">${obs}</td>
+          </tr>
+        `;
+      }
+
+      const modalEspelho = document.createElement('div');
+      modalEspelho.id = 'modal-espelho';
+      modalEspelho.className = 'fixed inset-0 bg-stone-900/60 z-50 flex items-center justify-center p-4';
+      modalEspelho.innerHTML = `
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+          <div class="flex items-center justify-between border-b pb-3">
+            <div>
+              <h3 class="font-bold text-stone-800 text-base flex items-center gap-2">
+                <i class="ph ph-calendar-check text-brand-600"></i> Espelho de Ponto Individual
+              </h3>
+              <p class="text-xs text-stone-500">${nome} &bull; Matrícula: ${matricula} &bull; Competência: ${competencia}</p>
+            </div>
+            <button onclick="document.getElementById('modal-espelho').remove()" class="text-stone-400 hover:text-stone-700 text-2xl">&times;</button>
+          </div>
+
+          <div class="flex-1 overflow-y-auto border border-stone-200 rounded-xl">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-stone-100 uppercase text-[10px] font-bold text-stone-700 sticky top-0">
+                <tr>
+                  <th class="p-2 text-center">Dia</th>
+                  <th class="p-2 text-center">Entrada 1</th>
+                  <th class="p-2 text-center">Saída 1</th>
+                  <th class="p-2 text-center">Entrada 2</th>
+                  <th class="p-2 text-center">Saída 2</th>
+                  <th class="p-2">Ocorrência / Calendário Acadêmico</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${linhasHTML}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="flex justify-between items-center pt-2 border-t text-xs text-stone-500">
+            <span>Feriados e recessos inseridos automaticamente do calendário UnDF.</span>
+            <button onclick="document.getElementById('modal-espelho').remove()" class="px-4 py-2 bg-brand-600 text-white rounded-lg font-semibold hover:bg-brand-700">Fechar</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modalEspelho);
+    }
+  </script>
+</body>
+</html>

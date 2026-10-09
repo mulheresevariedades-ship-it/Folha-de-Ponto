@@ -1,0 +1,1 @@
+- [Pinned pnpm in Replit](pnpm-version-pin.md) — when a Replit workflow loops while switching pnpm versions, use Corepack and disable pnpm's automatic version manager.

@@ -1,0 +1,76 @@
+## 📋 Lista de Melhorias Planejadas
+
+### 1. Gestão, Processamento e Armazenamento de Folhas de Ponto (PDF)
+
+* **1.1. Múltiplos Uploads:** Permitir o envio de mais de um arquivo PDF por mês.
+* **1.2. Detecção Individual de Mês:** Identificar o mês e ano de referência diretamente no conteúdo de cada folha de ponto (e não apenas pelo nome do arquivo PDF).
+* **1.3. Organização de Pastas e Nomenclatura Padrão:**
+* **Diretório por Mês:** Organização automática das folhas individualizadas em pastas separadas por mês de referência (ex: `Folhas_2027-01/`, `Folhas_2027-02/`).
+* **Formato Padrão do Arquivo:**
+
+$$\text{Nome\_do\_servidor-AAAA-MM.pdf}$$
+
+
+
+*(ex: `Maria_Silva_Santos-2027-01.pdf`).*
+* **Sanitização de Nomes:** Limpeza automatizada de espaços duplos e caracteres especiais/acentos nos nomes para evitar erros no sistema de arquivos da rede.
+
+
+* **1.4. Tratamento de Duplicidades e Versionamento:**
+* **Substituição com Backup Automático:** Quando houver duplicidade (folha do mesmo servidor e mês já gravada) e o usuário optar por atualizar, o sistema renomeia o arquivo antigo para:
+
+$$\text{Nome\_do\_servidor-AAAA-MM\_OLD\_[AAAAMMDD-HHMMSS].pdf}$$
+
+
+
+*(ex: `Maria_Silva_Santos-2027-01_OLD_20270215-143022.pdf`)* antes de salvar a versão nova.
+* **Duplicidade no Mesmo Arquivo:** Tratar casos em que o mesmo PDF subido contiver mais de uma folha para o mesmo servidor no mesmo mês.
+
+
+* **1.5. Validadores (Guardrails):**
+* Aceitar estritamente arquivos com extensão `.pdf`.
+
+
+
+### 2. Cadastro e Gestão de Servidores (Excel)
+
+* **2.1. Carga via Planilha:** Importação em lote dos dados dos servidores.
+* **Validação de Formato:** Aceitar apenas extensões `.xls` e `.xlsx`.
+* **Validação de Estrutura:** Checar se os cabeçalhos/colunas estão no padrão esperado. Caso contrário, rejeitar o upload com mensagem clara do erro.
+* **Resumo Prévio:** Exibir resumo informativo antes de confirmar a gravação (ex: *"X novos cadastrados, Y atualizados, Z ignorados por duplicidade"*).
+
+
+* **2.2. Gestão Manual e Busca:**
+* Permitir inclusão, edição e remoção manual individual de servidores diretamente na interface.
+* **Filtros e Busca Simples:** Busca rápida por **Nome**, **CPF** ou **Matrícula** na tela de servidores.
+
+
+
+### 3. Calendário Acadêmico e Datas Especiais
+
+* **3.1. Carga de Calendário via Planilha:** Importação de arquivo com colunas `Data` e `Especificação` (ex: `01/01/2027` | `Feriado Nacional`, `01/07/2027` | `Recesso Acadêmico`).
+* Inserção automática das datas especiais nas folhas geradas.
+* Resumo de confirmação do carregamento (novos registros, atualizados e ignorados).
+
+
+* **3.2. Edição Manual:** Interface para adicionar, alterar ou remover feriados, recesso e pontos facultativos diretamente no software.
+
+### 4. Configurações, Envio de E-mails e Histórico
+
+* **4.1. Conexão SMTP:** Configuração de envio de e-mails autenticado via servidor da instituição (ex: `digep@undf.edu.br`).
+* **4.2. Seleção Flexível de Envio:**
+* **Seleção Manual Individual:** Escolher servidores específicos na lista para envio.
+* **Envio por Grupos:** Enviar para todos os servidores, apenas para pendentes ou **reenviar para aqueles que apresentaram erro** no disparo anterior.
+
+
+* **4.3. Histórico e Logs:**
+* Registro detalhado indicando status de sucesso ou erro no envio de cada e-mail.
+* **Filtros e Busca:** Consulta no histórico por Nome, CPF ou Matrícula do servidor.
+
+
+
+### 5. Arquitetura e Implantação (Pasta Compartilhada)
+
+* **5.1. Modo Portátil (Portable):** Execução a partir de uma pasta de rede compartilhada sem necessidade de instalação local nos computadores.
+* **5.2. Acesso Sem Autenticação:** Acesso livre ao software (sem tela de login/senha).
+* **5.3. Mecanismo de Lock Simples (Controle de Concorrência):** Exibição de aviso visual (ex: *"Sistema em uso por outro usuário"*) para evitar que duas pessoas salvem dados ao mesmo tempo na rede e corrompam o arquivo de dados.
