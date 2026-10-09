@@ -13,6 +13,9 @@ import {
 	uuid,
 } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
+export * from "./calendar";
+export * from "./operation-locks";
+export * from "./smtp-settings";
 
 export const userRole = pgEnum("user_role", ["admin", "operador", "consulta"]);
 export const timesheetStatus = pgEnum("timesheet_status", [
@@ -42,7 +45,9 @@ export const employees = pgTable("employees", {
 	matricula: text("matricula").notNull().unique(),
 	cpfEncrypted: text("cpf_encrypted"),
 	cpfLastDigits: text("cpf_last_digits"),
+	cpfSearchHash: text("cpf_search_hash"),
 	email: text("email"),
+	cargo: text("cargo").notNull().default(""),
 	workloadHours: integer("workload_hours").notNull().default(40),
 	accumulatesRole: boolean("accumulates_role").notNull().default(false),
 	active: boolean("active").notNull().default(true),
@@ -75,6 +80,7 @@ export const timesheets = pgTable(
 		note: text("note"),
 		extractedData: jsonb("extracted_data").$type<Record<string, unknown>>(),
 		originalFilePath: text("original_file_path"),
+		personCompetencyKey: text("person_competency_key"),
 		reviewedBy: uuid("reviewed_by").references(() => users.id),
 		reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -83,6 +89,10 @@ export const timesheets = pgTable(
 	(table) => ({
 		employeeCompetencyUnique: uniqueIndex("timesheets_employee_competency_unique").on(
 			table.employeeId,
+			table.competency,
+		),
+		personCompetencyUnique: uniqueIndex("timesheets_person_competency_unique").on(
+			table.personCompetencyKey,
 			table.competency,
 		),
 	}),
@@ -94,6 +104,9 @@ export const dispatches = pgTable("dispatches", {
 	employeeId: integer("employee_id").notNull().references(() => employees.id),
 	status: dispatchStatus("status").notNull().default("pendente"),
 	errorMessage: text("error_message"),
+	deliveryMode: text("delivery_mode").notNull().default("simulado"),
+	attemptCount: integer("attempt_count").notNull().default(0),
+	lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
 	authorizedBy: uuid("authorized_by").references(() => users.id),
 	authorizedAt: timestamp("authorized_at", { withTimezone: true }),
 	sentAt: timestamp("sent_at", { withTimezone: true }),

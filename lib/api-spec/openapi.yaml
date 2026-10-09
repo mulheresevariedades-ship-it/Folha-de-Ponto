@@ -1,15 +1,26 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API do Ponto Digital DIGEP em modo de demonstração
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: operations
+    description: Operações de folhas de ponto
+  - name: employees
+    description: Cadastro e importação de servidores
+  - name: calendar
+    description: Calendário acadêmico
+  - name: dispatches
+    description: Fila e histórico de envios demonstrativos
+  - name: settings
+    description: Configurações da demonstração
+  - name: coordination
+    description: Controle de concorrência
 paths:
   /healthz:
     get:
@@ -24,7 +35,520 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [operations]
+      summary: Resumo da competência
+      parameters:
+        - name: competency
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Métricas atuais
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardMetrics"
+  /timesheets:
+    get:
+      operationId: listTimesheets
+      tags: [operations]
+      summary: Lista folhas com filtros opcionais
+      parameters:
+        - name: competency
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Folhas encontradas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Timesheet" }
+  /timesheets/{id}:
+    get:
+      operationId: getTimesheet
+      tags: [operations]
+      summary: Detalhes de uma folha
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Folha encontrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Timesheet" }
+        "404": { description: Folha não encontrada }
+  /timesheets/{id}/review:
+    patch:
+      operationId: reviewTimesheet
+      tags: [operations]
+      summary: Confirma, encaminha ou rejeita uma folha
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TimesheetReviewInput" }
+      responses:
+        "200":
+          description: Folha atualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Timesheet" }
+        "400": { description: Dados de revisão inválidos }
+        "404": { description: Folha não encontrada }
+  /timesheets/{id}/file:
+    get:
+      operationId: getTimesheetFile
+      tags: [operations]
+      summary: Abre o PDF de demonstração
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404": { description: Arquivo não encontrado }
+  /timesheets/generate:
+    get:
+      operationId: generateTimesheet
+      tags: [operations]
+      summary: Gera folha DOCX com os dias especiais do calendário
+      parameters:
+        - name: employeeId
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: competency
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Documento DOCX
+          content:
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema: { type: string, format: binary }
+        "404": { description: Servidor não encontrado }
+  /batches/preview:
+    post:
+      operationId: previewBatch
+      tags: [operations]
+      summary: Analisa PDFs sem gravar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/BatchUploadInput" }
+      responses:
+        "200":
+          description: Prévia do lote
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchPreview" }
+        "400": { description: Arquivo ou formulário inválido }
+  /batches:
+    post:
+      operationId: processBatch
+      tags: [operations]
+      summary: Arquiva as páginas após confirmação
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/BatchUploadInput" }
+      responses:
+        "201":
+          description: Lote processado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchProcessResult" }
+        "409":
+          description: Há duplicidades que exigem confirmação
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchPreview" }
+  /employees:
+    get:
+      operationId: listEmployees
+      tags: [employees]
+      summary: Lista e pesquisa servidores
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Servidores encontrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Employee" }
+    post:
+      operationId: createEmployee
+      tags: [employees]
+      summary: Cadastra um servidor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeInput" }
+      responses:
+        "201":
+          description: Servidor criado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Employee" }
+        "409": { description: Matrícula já cadastrada }
+  /employees/{id}:
+    patch:
+      operationId: updateEmployee
+      tags: [employees]
+      summary: Atualiza um servidor
+      parameters:
+        - $ref: "#/components/parameters/NumericId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeUpdate" }
+      responses:
+        "200":
+          description: Servidor atualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Employee" }
+        "404": { description: Servidor não encontrado }
+    delete:
+      operationId: deleteEmployee
+      tags: [employees]
+      summary: Desativa um servidor
+      parameters:
+        - $ref: "#/components/parameters/NumericId"
+      responses:
+        "204": { description: Servidor desativado }
+        "404": { description: Servidor não encontrado }
+  /employees/import/preview:
+    post:
+      operationId: previewEmployeeImport
+      tags: [employees]
+      summary: Valida planilha e calcula novos, atualizados e ignorados
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/SpreadsheetUpload" }
+      responses:
+        "200":
+          description: Resumo da importação
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportPreview" }
+        "422": { description: Cabeçalhos ou linhas inválidos }
+  /employees/import:
+    post:
+      operationId: importEmployees
+      tags: [employees]
+      summary: Confirma a importação da planilha
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/SpreadsheetUpload" }
+      responses:
+        "200":
+          description: Importação concluída
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportSummary" }
+        "422": { description: Cabeçalhos ou linhas inválidos }
+  /calendar:
+    get:
+      operationId: listCalendarDates
+      tags: [calendar]
+      summary: Lista datas especiais
+      parameters:
+        - name: year
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Datas especiais
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CalendarEvent" }
+    post:
+      operationId: createCalendarDate
+      tags: [calendar]
+      summary: Cadastra data especial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CalendarEventInput" }
+      responses:
+        "201":
+          description: Data cadastrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarEvent" }
+        "409": { description: Já existe um evento nesta data }
+  /calendar/{id}:
+    patch:
+      operationId: updateCalendarDate
+      tags: [calendar]
+      summary: Atualiza data especial
+      parameters:
+        - $ref: "#/components/parameters/NumericId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CalendarEventUpdate" }
+      responses:
+        "200":
+          description: Data atualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarEvent" }
+        "404": { description: Data não encontrada }
+    delete:
+      operationId: deleteCalendarDate
+      tags: [calendar]
+      summary: Remove data especial
+      parameters:
+        - $ref: "#/components/parameters/NumericId"
+      responses:
+        "204": { description: Data removida }
+        "404": { description: Data não encontrada }
+  /calendar/import/preview:
+    post:
+      operationId: previewCalendarImport
+      tags: [calendar]
+      summary: Valida calendário XLSX e calcula o resumo
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/SpreadsheetUpload" }
+      responses:
+        "200":
+          description: Prévia do calendário
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportPreview" }
+        "422": { description: Cabeçalhos ou datas inválidos }
+  /calendar/import:
+    post:
+      operationId: importCalendar
+      tags: [calendar]
+      summary: Confirma a importação do calendário
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/SpreadsheetUpload" }
+      responses:
+        "200":
+          description: Importação concluída
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportSummary" }
+        "422": { description: Cabeçalhos ou datas inválidos }
+  /dispatches:
+    get:
+      operationId: listDispatches
+      tags: [dispatches]
+      summary: Lista fila e histórico com pesquisa
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Registros de envio
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Dispatch" }
+  /dispatches/{id}/send:
+    patch:
+      operationId: sendDispatch
+      tags: [dispatches]
+      summary: Registra envio de demonstração individual
+      parameters:
+        - $ref: "#/components/parameters/NumericId"
+      responses:
+        "200":
+          description: Envio de demonstração registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispatch" }
+        "404": { description: Despacho não encontrado }
+  /dispatches/{id}/resend:
+    patch:
+      operationId: resendDispatch
+      tags: [dispatches]
+      summary: Registra nova tentativa demonstrativa
+      parameters:
+        - $ref: "#/components/parameters/NumericId"
+      responses:
+        "200":
+          description: Nova tentativa registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispatch" }
+        "404": { description: Despacho não encontrado }
+  /dispatches/send-batch:
+    post:
+      operationId: sendDispatchBatch
+      tags: [dispatches]
+      summary: Registra envios demonstrativos em grupo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DispatchBatchInput" }
+      responses:
+        "200":
+          description: Resumo do lote
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DispatchBatchResult" }
+  /audit:
+    get:
+      operationId: listAudit
+      tags: [operations]
+      summary: Pesquisa histórico de alterações e envios
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Eventos encontrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEvent" }
+  /settings/smtp:
+    get:
+      operationId: getSmtpSettings
+      tags: [settings]
+      summary: Lê configuração sem expor a senha
+      responses:
+        "200":
+          description: Configuração de demonstração
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SmtpSettings" }
+    put:
+      operationId: updateSmtpSettings
+      tags: [settings]
+      summary: Salva configuração SMTP para apresentação, sem conectar ou enviar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SmtpSettingsInput" }
+      responses:
+        "200":
+          description: Configuração salva
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SmtpSettings" }
+  /settings/smtp/test:
+    post:
+      operationId: testSmtpSettings
+      tags: [settings]
+      summary: Valida campos sem abrir conexão externa
+      responses:
+        "200":
+          description: Resultado da validação local
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SmtpTestResult" }
+  /lock:
+    get:
+      operationId: getLockState
+      tags: [coordination]
+      summary: Consulta o aviso de concorrência
+      parameters:
+        - name: sessionId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Estado do bloqueio
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LockState" }
+  /lock/heartbeat:
+    post:
+      operationId: heartbeatLock
+      tags: [coordination]
+      summary: Renova a sessão de edição
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LockSessionInput" }
+      responses:
+        "200":
+          description: Estado atualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LockState" }
+  /lock/release:
+    post:
+      operationId: releaseLock
+      tags: [coordination]
+      summary: Libera sessão de edição
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LockSessionInput" }
+      responses:
+        "200":
+          description: Bloqueio liberado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LockState" }
 components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    NumericId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +557,255 @@ components:
           type: string
       required:
         - status
+    DashboardMetrics:
+      type: object
+      properties:
+        total: { type: integer }
+        recognized: { type: integer }
+        review: { type: integer }
+        low_confidence: { type: integer }
+        archived: { type: integer }
+        recognition_rate: { type: integer }
+        dispatch_pending: { type: integer }
+        dispatch_sent: { type: integer }
+        dispatch_error: { type: integer }
+      required: [total, recognized, review, low_confidence, archived, recognition_rate, dispatch_pending, dispatch_sent, dispatch_error]
+    Timesheet:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        matricula: { type: [string, "null"] }
+        competencia: { type: string }
+        confidence: { type: integer }
+        status: { type: string }
+        status_label: { type: string }
+        reviewed_at: { type: [string, "null"], format: date-time }
+        note: { type: [string, "null"] }
+        file_url: { type: [string, "null"] }
+      required: [id, name, matricula, competencia, confidence, status, status_label, reviewed_at]
+    TimesheetReviewInput:
+      type: object
+      properties:
+        action: { type: string, enum: [confirm, pending, reject] }
+        name: { type: string }
+        matricula: { type: string }
+        competency: { type: string }
+        note: { type: string }
+      required: [action]
+    Employee:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        matricula: { type: string }
+        cpf: { type: string }
+        email: { type: string }
+        cargo: { type: string }
+        carga_horaria: { type: integer }
+        acumula: { type: boolean }
+      required: [id, name, matricula, cpf, email, cargo, carga_horaria, acumula]
+    EmployeeInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        matricula: { type: string, minLength: 1 }
+        cpf: { type: string }
+        email: { type: string }
+        cargo: { type: string }
+        workloadHours: { type: integer, minimum: 1, maximum: 100 }
+        accumulatesRole: { type: boolean }
+      required: [name, matricula]
+    EmployeeUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        matricula: { type: string }
+        cpf: { type: string }
+        email: { type: string }
+        cargo: { type: string }
+        workloadHours: { type: integer, minimum: 1, maximum: 100 }
+        accumulatesRole: { type: boolean }
+    SpreadsheetUpload:
+      type: object
+      properties:
+        file: { type: string, format: binary }
+      required: [file]
+    ImportPreviewRow:
+      type: object
+      properties:
+        name: { type: string }
+        matricula: { type: string }
+        cpf: { type: string }
+        email: { type: string }
+        workloadHours: { type: integer }
+        accumulatesRole: { type: boolean }
+        date: { type: string, format: date }
+        description: { type: string }
+        action: { type: string }
+      required: [action]
+    ImportPreview:
+      type: object
+      properties:
+        newCount: { type: integer }
+        updatedCount: { type: integer }
+        skippedCount: { type: integer }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ImportPreviewRow" }
+      required: [newCount, updatedCount, skippedCount, rows]
+    ImportSummary:
+      type: object
+      properties:
+        imported: { type: integer }
+        updated: { type: integer }
+        skipped: { type: integer }
+      required: [imported, updated, skipped]
+    BatchUploadInput:
+      type: object
+      properties:
+        files:
+          type: array
+          items: { type: string, format: binary }
+        fallbackCompetency: { type: string }
+        replaceDuplicates: { type: boolean }
+      required: [files]
+    BatchPreviewItem:
+      type: object
+      properties:
+        sourceFilename: { type: string }
+        pageNumber: { type: integer }
+        name: { type: string }
+        matricula: { type: [string, "null"] }
+        competency: { type: string }
+        confidence: { type: integer }
+        duplicate: { type: boolean }
+        duplicateInUpload: { type: boolean }
+        needsReview: { type: boolean }
+      required: [sourceFilename, pageNumber, name, matricula, competency, confidence, duplicate, duplicateInUpload, needsReview]
+    BatchPreview:
+      type: object
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/BatchPreviewItem" }
+        newCount: { type: integer }
+        duplicateCount: { type: integer }
+        reviewCount: { type: integer }
+      required: [entries, newCount, duplicateCount, reviewCount]
+    BatchProcessResult:
+      type: object
+      properties:
+        created: { type: integer }
+        updated: { type: integer }
+        skipped: { type: integer }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/BatchPreviewItem" }
+      required: [created, updated, skipped, entries]
+    CalendarEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        date: { type: string, format: date }
+        description: { type: string }
+      required: [id, date, description]
+    CalendarEventInput:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        description: { type: string, minLength: 1 }
+      required: [date, description]
+    CalendarEventUpdate:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        description: { type: string }
+    Dispatch:
+      type: object
+      properties:
+        id: { type: integer }
+        employee_name: { type: string }
+        employee_matricula: { type: string }
+        employee_email: { type: string }
+        employee_cpf: { type: string }
+        status: { type: string, enum: [pendente, enviado, erro] }
+        created_at: { type: string, format: date-time }
+        authorized_at: { type: [string, "null"], format: date-time }
+        sent_at: { type: [string, "null"], format: date-time }
+        error_message: { type: [string, "null"] }
+        delivery_mode: { type: string, enum: [simulado, real] }
+      required: [id, employee_name, employee_matricula, employee_email, employee_cpf, status, created_at, authorized_at, sent_at, error_message, delivery_mode]
+    DispatchBatchInput:
+      type: object
+      properties:
+        mode: { type: string, enum: [all, pending, errors, selected] }
+        ids:
+          type: array
+          items: { type: integer }
+      required: [mode]
+    DispatchBatchResult:
+      type: object
+      properties:
+        processed: { type: integer }
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              status: { type: string }
+              message: { type: string }
+            required: [id, status, message]
+      required: [processed, results]
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        matricula: { type: string }
+        cpf: { type: string }
+        action: { type: string }
+        status: { type: string }
+        competencia: { type: string }
+        date: { type: string, format: date-time }
+      required: [id, name, matricula, cpf, action, status, competencia, date]
+    SmtpSettings:
+      type: object
+      properties:
+        host: { type: string }
+        port: { type: integer }
+        username: { type: string }
+        senderEmail: { type: string }
+        passwordSet: { type: boolean }
+        demoOnly: { type: boolean }
+      required: [host, port, username, senderEmail, passwordSet, demoOnly]
+    SmtpSettingsInput:
+      type: object
+      properties:
+        host: { type: string }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        username: { type: string }
+        senderEmail: { type: string }
+        appPassword: { type: string }
+      required: [host, port, senderEmail]
+    SmtpTestResult:
+      type: object
+      properties:
+        valid: { type: boolean }
+        message: { type: string }
+        demoOnly: { type: boolean }
+      required: [valid, message, demoOnly]
+    LockState:
+      type: object
+      properties:
+        locked: { type: boolean }
+        heldByThisClient: { type: boolean }
+        expiresAt: { type: [string, "null"], format: date-time }
+      required: [locked, heldByThisClient, expiresAt]
+    LockSessionInput:
+      type: object
+      properties:
+        sessionId: { type: string, minLength: 12 }
+      required: [sessionId]
 
