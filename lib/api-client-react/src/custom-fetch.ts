@@ -336,6 +336,14 @@ export async function customFetch<T = unknown>(
   }
 
   const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
+  if (typeof window !== "undefined" && !headers.has("x-demo-session")) {
+    try {
+      const sessionId = window.localStorage.getItem("digep-session-id");
+      if (sessionId) headers.set("x-demo-session", sessionId);
+    } catch {
+      // The demo UI will remain read-only if local storage is unavailable.
+    }
+  }
 
   if (
     typeof init.body === "string" &&

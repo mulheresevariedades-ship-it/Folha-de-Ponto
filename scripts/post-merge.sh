@@ -1,4 +1,4 @@
 #!/bin/bash
 set -e
-pnpm install --frozen-lockfile
-pnpm --filter db push
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @workspace/db run push

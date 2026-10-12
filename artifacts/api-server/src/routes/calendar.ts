@@ -5,7 +5,7 @@ import path from "node:path";
 import * as XLSX from "xlsx";
 import { CreateCalendarDateBody, UpdateCalendarDateBody } from "@workspace/api-zod";
 import { calendarEvents, db } from "@workspace/db";
-import { recordAudit, safeString } from "../lib/audit";
+import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -134,7 +134,13 @@ router.post("/calendar", async (req, res, next): Promise<void> => {
 			res.status(400).json({ message: "Informe uma data e sua especificação.", issues: parsed.error.issues });
 			return;
 		}
-		const [created] = await db.insert(calendarEvents).values(parsed.data).returning();
+		const [created] = await db
+			.insert(calendarEvents)
+			.values({
+				date: parsed.data.date.toISOString().slice(0, 10),
+				description: parsed.data.description,
+			})
+			.returning();
 		await recordAudit("data_calendario_criada", "calendar", String(created.id), {
 			date: created.date,
 			description: created.description,
@@ -161,9 +167,12 @@ router.patch("/calendar/:id", async (req, res, next): Promise<void> => {
 			res.status(400).json({ message: "Revise a data e sua especificação.", issues: parsed.error.issues });
 			return;
 		}
+		const changes: { date?: string; description?: string; updatedAt: Date } = { updatedAt: new Date() };
+		if (parsed.data.date) changes.date = parsed.data.date.toISOString().slice(0, 10);
+		if (parsed.data.description !== undefined) changes.description = parsed.data.description;
 		const [updated] = await db
 			.update(calendarEvents)
-			.set({ ...parsed.data, updatedAt: new Date() })
+			.set(changes)
 			.where(eq(calendarEvents.id, id))
 			.returning();
 		if (!updated) {
@@ -206,7 +215,7 @@ router.delete("/calendar/:id", async (req, res, next): Promise<void> => {
 	}
 });
 
-router.post("/calendar/import/preview", upload.single("file"), async (req, res, next): Promise<void> => {
+router.post("/calendar/import/preview", upload.single("file"), async (req, res): Promise<void> => {
 	try {
 		const file = req.file;
 		if (!file || ![".xlsx", ".xls"].includes(path.extname(file.originalname).toLowerCase())) {
