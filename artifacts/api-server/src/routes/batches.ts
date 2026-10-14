@@ -47,6 +47,10 @@ type AnalysisEntry = {
 	needsReview: boolean;
 	ocrUnavailable: boolean;
 };
+type AnalysisError = {
+	sourceFilename: string;
+	message: string;
+};
 
 let activeOcrWorker: Awaited<ReturnType<typeof createWorker>> | null = null;
 let pdfQueue: Promise<void> = Promise.resolve();
@@ -185,20 +189,31 @@ function matchedEmployee(text: string, extractedMatricula: string | null, extrac
 
 async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 	if (!files.length) throw new Error("Envie pelo menos um PDF.");
-	if (files.some((file) => path.extname(file.originalname).toLowerCase() !== ".pdf" || file.buffer.subarray(0, 5).toString() !== "%PDF-")) {
-		throw new Error("Somente arquivos PDF válidos são aceitos.");
-	}
 	const totalBytes = files.reduce((total, file) => total + file.size, 0);
 	if (totalBytes > maxTotalBytes) throw new Error("O lote ultrapassa o limite de 50 MB.");
 
 	const sourceDocs: Array<{ file: UploadedFile; path: string; document: PDFDocument; hash: string }> = [];
+	const errors: AnalysisError[] = [];
 	let totalPages = 0;
 	for (const file of files) {
-		const document = await PDFDocument.load(file.buffer);
+		if (path.extname(file.originalname).toLowerCase() !== ".pdf" || file.buffer.subarray(0, 5).toString() !== "%PDF-") {
+			errors.push({ sourceFilename: file.originalname, message: "Somente arquivos PDF válidos são aceitos." });
+			continue;
+		}
+		let document: PDFDocument;
+		try {
+			document = await PDFDocument.load(file.buffer);
+		} catch {
+			errors.push({ sourceFilename: file.originalname, message: "O arquivo não pôde ser lido como PDF." });
+			continue;
+		}
 		totalPages += document.getPageCount();
 		if (totalPages > maxPages) throw new Error(`O lote pode conter no máximo ${maxPages} páginas.`);
 		const hash = createHash("sha256").update(file.buffer).digest("hex");
 		sourceDocs.push({ file, path: "", document, hash });
+	}
+	if (!sourceDocs.length) {
+		throw new Error(errors[0]?.message ?? "Nenhum PDF válido foi enviado.");
 	}
 
 	const activeEmployees = await db.select().from(employees).where(eq(employees.active, true));
@@ -285,7 +300,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 				});
 			}
 		}
-		return entries;
+		return { entries, errors };
 	} finally {
 		if (activeOcrWorker) {
 			await activeOcrWorker.terminate().catch(() => undefined);
@@ -295,7 +310,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 	}
 }
 
-function toPreview(entries: AnalysisEntry[]) {
+function toPreview(entries: AnalysisEntry[], errors: AnalysisError[] = []) {
 	const duplicateCount = entries.filter((entry) => entry.duplicate).length;
 	const reviewCount = entries.filter((entry) => entry.needsReview).length;
 	return {
@@ -313,6 +328,7 @@ function toPreview(entries: AnalysisEntry[]) {
 		newCount: entries.length - duplicateCount,
 		duplicateCount,
 		reviewCount,
+		errors,
 	};
 }
 
@@ -492,8 +508,8 @@ router.post("/batches/preview", upload.array("files", 10), async (req, res): Pro
 			res.status(400).json({ message: "Competência de fallback inválida. Use AAAA-MM." });
 			return;
 		}
-		const entries = await serializePdfWork(() => analyzeFiles(files, fallbackCompetency));
-		res.json(toPreview(entries));
+		const analysis = await serializePdfWork(() => analyzeFiles(files, fallbackCompetency));
+		res.json(toPreview(analysis.entries, analysis.errors));
 	} catch (error) {
 		res.status(422).json({ message: error instanceof Error ? error.message : "Não foi possível analisar o lote." });
 	}
@@ -509,8 +525,13 @@ router.post("/batches", upload.array("files", 10), async (req, res, next): Promi
 			return;
 		}
 		const outcome = await serializePdfWork(async () => {
-			const entries = await analyzeFiles(files, fallbackCompetency);
-			return persistEntries(entries, replaceDuplicates);
+			const analysis = await analyzeFiles(files, fallbackCompetency);
+			const result = await persistEntries(analysis.entries, replaceDuplicates);
+			if (result.conflict) return result;
+			return {
+				...result,
+				result: { ...result.result, errors: analysis.errors },
+			};
 		});
 		if (outcome.conflict) {
 			res.status(409).json(outcome.preview);
