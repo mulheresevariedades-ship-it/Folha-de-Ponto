@@ -121,8 +121,8 @@ function safeSlug(value: string): string {
 	const slug = value
 		.normalize("NFD")
 		.replace(/[\u0300-\u036f]/g, "")
-		.replace(/[^a-zA-Z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
+		.replace(/[^a-zA-Z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "")
 		.slice(0, 100);
 	return slug || "Servidor-nao-identificado";
 }
@@ -373,7 +373,7 @@ async function persistEntries(entries: AnalysisEntry[], replaceDuplicates: boole
 		const [batch] = await db
 			.insert(batches)
 			.values({
-				originalFilename: "arquivo.pdf",
+				originalFilename: entry.sourceFilename,
 				storagePath: sourcePath,
 				fileHash: entry.sourceHash,
 				mimeType: "application/pdf",
@@ -388,9 +388,15 @@ async function persistEntries(entries: AnalysisEntry[], replaceDuplicates: boole
 	let skipped = 0;
 	const committedEntries: AnalysisEntry[] = [];
 	const fileChanges: Array<{ archivePath: string; backupPath: string | null; restorePath: string }> = [];
+	const committedUploadKeys = new Set<string>();
 	try {
 		await db.transaction(async (tx) => {
 			for (const entry of entries) {
+				const uploadKey = `${entry.personKey}|${entry.competency}`;
+				if (committedUploadKeys.has(uploadKey)) {
+					skipped += 1;
+					continue;
+				}
 				const criteria = and(
 					eq(timesheets.competency, entry.competency),
 					entry.employee
@@ -448,6 +454,7 @@ async function persistEntries(entries: AnalysisEntry[], replaceDuplicates: boole
 					});
 					created += 1;
 				}
+				committedUploadKeys.add(uploadKey);
 				committedEntries.push(entry);
 			}
 		});
