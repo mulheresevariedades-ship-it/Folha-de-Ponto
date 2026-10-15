@@ -10,6 +10,7 @@ _Replace the heading above with the project's name, and this line with one sente
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Vercel: configure `DATABASE_URL` in the project environment variables before deploying. The root `vercel.json` exposes `api/index.ts` as the `/api` serverless API used by the frontend.
 
 ## Stack
 

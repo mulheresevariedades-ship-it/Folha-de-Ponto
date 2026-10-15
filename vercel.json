@@ -4,6 +4,11 @@
   "installCommand": "corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @workspace/ponto-digital run build",
   "outputDirectory": "artifacts/ponto-digital/dist/public",
+  "functions": {
+    "api/index.ts": {
+      "runtime": "nodejs24.x"
+    }
+  },
   "build": {
     "env": {
       "PORT": "3000",
