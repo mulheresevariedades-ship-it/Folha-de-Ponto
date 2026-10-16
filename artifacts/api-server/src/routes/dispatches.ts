@@ -91,7 +91,7 @@ async function simulateDispatch(id: number, allowRetry: boolean) {
 			errorMessage: status === "enviado" ? null : message,
 			deliveryMode,
 			authorizedAt: now,
-			sentAt: emailIsValid ? now : null,
+			sentAt: status === "enviado" ? now : null,
 			attemptCount: row.dispatch.attemptCount + 1,
 			lastAttemptAt: now,
 		})
