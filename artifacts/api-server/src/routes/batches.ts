@@ -11,6 +11,7 @@ import { PDFDocument } from "pdf-lib";
 import { createWorker } from "tesseract.js";
 import { db, batches, employees, timesheets } from "@workspace/db";
 import { recordAudit, normalizeSearch } from "../lib/audit";
+import { dataRoot } from "../lib/storage";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -350,7 +351,7 @@ async function createArchivePath(entry: AnalysisEntry, previousPath?: string | n
 		await fs.mkdir(path.dirname(previousPath), { recursive: true });
 		return previousPath;
 	}
-	const root = path.resolve(process.env.PONTO_DATA_DIR ?? "data");
+	const root = dataRoot();
 	const monthDirectory = path.join(root, `Folhas_${entry.competency}`);
 	await fs.mkdir(monthDirectory, { recursive: true });
 	const baseName = safeSlug(entry.name);
@@ -372,7 +373,7 @@ async function persistEntries(entries: AnalysisEntry[], replaceDuplicates: boole
 	if (duplicateEntries.length && !replaceDuplicates) {
 		return { conflict: true as const, preview: toPreview(entries) };
 	}
-	const root = path.resolve(process.env.PONTO_DATA_DIR ?? "data");
+	const root = dataRoot();
 	const sourceDirectory = path.join(root, "uploads", "sources");
 	await fs.mkdir(sourceDirectory, { recursive: true });
 

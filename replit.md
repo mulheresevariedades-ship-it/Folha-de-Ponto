@@ -10,11 +10,15 @@ _Replace the heading above with the project's name, and this line with one sente
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
-- Vercel: configure `DATABASE_URL` in the project environment variables before deploying. The root `vercel.json` exposes `api/index.ts` as the `/api` serverless API used by the frontend.
+- Recommended env: `PONTO_DATA_DIR` — absolute path to the shared data folder when running from a network share (for example `\\\\servidor\\FolhaPonto\\data` on Windows).
+- Recommended env: `SESSION_SECRET` — secret used to protect encrypted SMTP credentials.
+- Vercel: configure `DATABASE_URL` and `SESSION_SECRET` in the project environment variables before deploying. The root `vercel.json` exposes `api/index.ts` as the `/api` serverless API used by the frontend.
+- Vercel does not provide persistent local storage for uploaded PDFs. Use a server process with `PONTO_DATA_DIR` pointing to the shared folder, or replace the filesystem archive with persistent object storage before relying on archived files in Vercel.
+- Portable mode: from the shared folder, configure `PONTO_DATA_DIR` to its absolute network path and start the API with `pnpm --filter @workspace/api-server run dev`; start the frontend with `pnpm --filter @workspace/ponto-digital run dev`.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
+- pnpm workspaces, Node.js 20+, TypeScript 5.9
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`

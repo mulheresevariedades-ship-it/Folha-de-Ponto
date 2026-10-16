@@ -6,10 +6,11 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { auditEvents, batches, db, dispatches, employees, timesheets } from "@workspace/db";
+import { dataRoot } from "../lib/storage";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-const uploadDirectory = path.resolve(process.env.PONTO_DATA_DIR ?? "data", "uploads");
+const uploadDirectory = path.join(dataRoot(), "uploads");
 mkdirSync(uploadDirectory, { recursive: true });
 
 const statusLabels: Record<string, string> = {

@@ -6,7 +6,7 @@
   "outputDirectory": "artifacts/ponto-digital/dist/public",
   "functions": {
     "api/index.ts": {
-      "runtime": "nodejs24.x"
+      "runtime": "nodejs20.x"
     }
   },
   "build": {

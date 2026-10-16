@@ -224,7 +224,7 @@ router.post("/dispatches/send-batch", async (req, res, next): Promise<void> => {
 				: await db.select({ id: dispatches.id }).from(dispatches).where(statusFilter);
 		const results: Array<{ id: number; status: string; message: string }> = [];
 		for (const target of targets) {
-			const result = await simulateDispatch(target.id, false);
+			const result = await simulateDispatch(target.id, mode === "errors" || mode === "all" || mode === "selected");
 			if (result.kind === "sent" || result.kind === "error") {
 				results.push({ id: target.id, status: result.kind === "sent" ? "enviado" : "erro", message: result.message });
 			}

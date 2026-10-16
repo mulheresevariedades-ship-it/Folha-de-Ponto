@@ -17,6 +17,7 @@ import { ReviewTimesheetBody } from "@workspace/api-zod";
 import { calendarEvents, db, dispatches, employees, timesheets } from "@workspace/db";
 import { recordAudit, safeString } from "../lib/audit";
 import { cpfHash, maskCpf, normalizeCpf } from "../lib/demo-crypto";
+import { dataRoot } from "../lib/storage";
 
 const router: IRouter = Router();
 
@@ -229,9 +230,9 @@ router.get("/timesheets/:id/file", async (req, res, next): Promise<void> => {
 			res.status(404).json({ message: "Arquivo não encontrado." });
 			return;
 		}
-		const dataRoot = path.resolve(process.env.PONTO_DATA_DIR ?? "data");
+		const root = dataRoot();
 		const absolutePath = path.resolve(sheet.originalFilePath);
-		const relativePath = path.relative(dataRoot, absolutePath);
+		const relativePath = path.relative(root, absolutePath);
 		if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
 			res.status(404).json({ message: "Arquivo não encontrado." });
 			return;
