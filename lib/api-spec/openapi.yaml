@@ -642,6 +642,7 @@ components:
         accumulatesRole: { type: boolean }
         date: { type: string, format: date }
         description: { type: string }
+        type: { type: string, enum: [feriado, recesso, ponto_facultativo, suspensao_expediente, outro] }
         action: { type: string }
       required: [action]
     ImportPreview:
@@ -709,18 +710,21 @@ components:
         id: { type: integer }
         date: { type: string, format: date }
         description: { type: string }
-      required: [id, date, description]
+        type: { type: string, enum: [feriado, recesso, ponto_facultativo, suspensao_expediente, outro] }
+      required: [id, date, description, type]
     CalendarEventInput:
       type: object
       properties:
         date: { type: string, format: date }
         description: { type: string, minLength: 1 }
-      required: [date, description]
+        type: { type: string, enum: [feriado, recesso, ponto_facultativo, suspensao_expediente, outro] }
+      required: [date, description, type]
     CalendarEventUpdate:
       type: object
       properties:
         date: { type: string, format: date }
         description: { type: string }
+        type: { type: string, enum: [feriado, recesso, ponto_facultativo, suspensao_expediente, outro] }
     Dispatch:
       type: object
       properties:
@@ -735,7 +739,8 @@ components:
         sent_at: { type: [string, "null"], format: date-time }
         error_message: { type: [string, "null"] }
         delivery_mode: { type: string, enum: [simulado, real] }
-      required: [id, employee_name, employee_matricula, employee_email, employee_cpf, status, created_at, authorized_at, sent_at, error_message, delivery_mode]
+        file_name: { type: [string, "null"] }
+      required: [id, employee_name, employee_matricula, employee_email, employee_cpf, status, created_at, authorized_at, sent_at, error_message, delivery_mode, file_name]
     DispatchBatchInput:
       type: object
       properties:
@@ -777,9 +782,10 @@ components:
         port: { type: integer }
         username: { type: string }
         senderEmail: { type: string }
+        secure: { type: boolean }
         passwordSet: { type: boolean }
         demoOnly: { type: boolean }
-      required: [host, port, username, senderEmail, passwordSet, demoOnly]
+      required: [host, port, username, senderEmail, secure, passwordSet, demoOnly]
     SmtpSettingsInput:
       type: object
       properties:
@@ -787,8 +793,9 @@ components:
         port: { type: integer, minimum: 1, maximum: 65535 }
         username: { type: string }
         senderEmail: { type: string }
+        secure: { type: boolean }
         appPassword: { type: string }
-      required: [host, port, senderEmail]
+      required: [host, port, senderEmail, secure]
     SmtpTestResult:
       type: object
       properties:
@@ -808,4 +815,3 @@ components:
       properties:
         sessionId: { type: string, minLength: 12 }
       required: [sessionId]
-

@@ -10,4 +10,5 @@ export interface CalendarEventInput {
   date: Date;
   /** @minLength 1 */
   description: string;
+  type: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
 }

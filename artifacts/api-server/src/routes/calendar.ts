@@ -50,7 +50,9 @@ function parseCalendarDate(value: unknown): string | null {
 	return null;
 }
 
-type CalendarRow = { date: string; description: string };
+const eventTypes = ["feriado", "recesso", "ponto_facultativo", "suspensao_expediente", "outro"] as const;
+type CalendarEventType = (typeof eventTypes)[number];
+type CalendarRow = { date: string; description: string; type: CalendarEventType };
 
 function parseCalendarSheet(buffer: Buffer): { rows: CalendarRow[]; skipped: number } {
 	const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
@@ -60,8 +62,9 @@ function parseCalendarSheet(buffer: Buffer): { rows: CalendarRow[]; skipped: num
 	const headers = (data[0] ?? []).map(normalizeHeader);
 	const dateColumn = headers.indexOf("data");
 	const descriptionColumn = headers.indexOf("especificacao");
-	if (dateColumn < 0 || descriptionColumn < 0) {
-		throw new Error("Cabeçalhos inválidos. Use exatamente as colunas Data e Especificação.");
+	const typeColumn = headers.indexOf("tipo");
+	if (dateColumn < 0 || descriptionColumn < 0 || typeColumn < 0) {
+		throw new Error("Cabeçalhos inválidos. Use as colunas Data, Especificação e Tipo.");
 	}
 	const rows: CalendarRow[] = [];
 	let skipped = 0;
@@ -69,11 +72,20 @@ function parseCalendarSheet(buffer: Buffer): { rows: CalendarRow[]; skipped: num
 		if (!row.some((cell) => cellText(cell))) continue;
 		const date = parseCalendarDate(row[dateColumn]);
 		const description = cellText(row[descriptionColumn]);
-		if (!date || !description) {
+		const rawType = normalizeHeader(row[typeColumn]);
+		const typeMap: Record<string, CalendarEventType> = {
+			feriado: "feriado",
+			recesso: "recesso",
+			pontofacultativo: "ponto_facultativo",
+			suspensaodeexpediente: "suspensao_expediente",
+			outro: "outro",
+		};
+		const type = typeMap[rawType];
+		if (!date || !description || !type) {
 			skipped += 1;
 			continue;
 		}
-		rows.push({ date, description });
+		rows.push({ date, description, type });
 	}
 	return { rows, skipped };
 }
@@ -102,7 +114,7 @@ async function buildPreview(buffer: Buffer) {
 			previewRows.push({ ...row, action: "novo" });
 		}
 	}
-	if (invalidRows) previewRows.push({ date: "", description: "", action: `${invalidRows} linha(s) ignorada(s): data ou especificação inválida.` });
+	if (invalidRows) previewRows.push({ date: "", description: "", type: "", action: `${invalidRows} linha(s) ignorada(s): data, tipo ou especificação inválida.` });
 	return { newCount, updatedCount, skippedCount, rows: previewRows };
 }
 
@@ -121,7 +133,7 @@ router.get("/calendar", async (req, res, next): Promise<void> => {
 					.where(and(gte(calendarEvents.date, `${year}-01-01`), lte(calendarEvents.date, `${year}-12-31`)))
 					.orderBy(calendarEvents.date)
 			: await db.select().from(calendarEvents).orderBy(calendarEvents.date);
-		res.json(results.map(({ id, date, description }) => ({ id, date, description })));
+		res.json(results.map(({ id, date, description, type }) => ({ id, date, description, type })));
 	} catch (error) {
 		next(error);
 	}
@@ -139,13 +151,14 @@ router.post("/calendar", async (req, res, next): Promise<void> => {
 			.values({
 				date: parsed.data.date.toISOString().slice(0, 10),
 				description: parsed.data.description,
+				type: parsed.data.type,
 			})
 			.returning();
 		await recordAudit("data_calendario_criada", "calendar", String(created.id), {
 			date: created.date,
 			description: created.description,
 		});
-		res.status(201).json({ id: created.id, date: created.date, description: created.description });
+		res.status(201).json({ id: created.id, date: created.date, description: created.description, type: created.type });
 	} catch (error) {
 		if (typeof error === "object" && error && "code" in error && error.code === "23505") {
 			res.status(409).json({ message: "Já existe um evento cadastrado para essa data." });
@@ -183,7 +196,7 @@ router.patch("/calendar/:id", async (req, res, next): Promise<void> => {
 			date: updated.date,
 			description: updated.description,
 		});
-		res.json({ id: updated.id, date: updated.date, description: updated.description });
+		res.json({ id: updated.id, date: updated.date, description: updated.description, type: updated.type });
 	} catch (error) {
 		if (typeof error === "object" && error && "code" in error && error.code === "23505") {
 			res.status(409).json({ message: "Já existe um evento cadastrado para essa data." });
@@ -208,6 +221,7 @@ router.delete("/calendar/:id", async (req, res, next): Promise<void> => {
 		await recordAudit("data_calendario_removida", "calendar", String(id), {
 			date: removed.date,
 			description: removed.description,
+			type: removed.type,
 		});
 		res.status(204).end();
 	} catch (error) {
@@ -256,7 +270,7 @@ router.post("/calendar/import", upload.single("file"), async (req, res, next): P
 					.values(row)
 					.onConflictDoUpdate({
 						target: calendarEvents.date,
-						set: { description: sql`excluded.description`, updatedAt: new Date() },
+						set: { description: sql`excluded.description`, type: sql`excluded.type`, updatedAt: new Date() },
 					});
 			}
 		});

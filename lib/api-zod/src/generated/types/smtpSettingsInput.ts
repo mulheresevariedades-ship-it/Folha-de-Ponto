@@ -15,5 +15,6 @@ export interface SmtpSettingsInput {
   port: number;
   username?: string;
   senderEmail: string;
+  secure: boolean;
   appPassword?: string;
 }

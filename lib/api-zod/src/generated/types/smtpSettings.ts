@@ -11,6 +11,7 @@ export interface SmtpSettings {
   port: number;
   username: string;
   senderEmail: string;
+  secure: boolean;
   passwordSet: boolean;
   demoOnly: boolean;
 }

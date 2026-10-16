@@ -46,7 +46,9 @@ type ParsedEmployeeRow = {
 	accumulatesRole: boolean;
 };
 
-function parseSpreadsheet(buffer: Buffer): { rows: ParsedEmployeeRow[]; skipped: number } {
+type ParsedEmployeeIssue = { rowNumber: number; reason: string };
+
+function parseSpreadsheet(buffer: Buffer): { rows: ParsedEmployeeRow[]; skipped: number; issues: ParsedEmployeeIssue[] } {
 	const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
 	const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
 	if (!firstSheet) throw new Error("A planilha não contém uma aba.");
@@ -55,11 +57,12 @@ function parseSpreadsheet(buffer: Buffer): { rows: ParsedEmployeeRow[]; skipped:
 	const positions = new Map(headers.map((header, index) => [header, index]));
 	const missing = requiredHeaders.filter((header) => !positions.has(header));
 	if (missing.length) {
-		throw new Error("Cabeçalhos inválidos. Use Nome, Matrícula, CPF, E-mail, Carga Horária e Acumula cargo (Sim/Não).");
+		throw new Error(`Cabeçalhos inválidos. Estão faltando: ${missing.join(", ")}.`);
 	}
 
 	let skipped = 0;
 	const rows: ParsedEmployeeRow[] = [];
+	const issues: ParsedEmployeeIssue[] = [];
 	for (const row of data.slice(1)) {
 		if (!row.some((cell) => cellText(cell))) continue;
 		const value = (key: string) => cellText(row[positions.get(key) ?? -1]);
@@ -72,10 +75,12 @@ function parseSpreadsheet(buffer: Buffer): { rows: ParsedEmployeeRow[]; skipped:
 
 		if (!name || !matricula || (cpf && cpf.length !== 11) || !Number.isFinite(hoursValue) || hoursValue < 1 || hoursValue > 100) {
 			skipped += 1;
+			issues.push({ rowNumber: data.indexOf(row) + 1, reason: "nome, matrícula, CPF ou carga horária inválidos." });
 			continue;
 		}
 		if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
 			skipped += 1;
+			issues.push({ rowNumber: data.indexOf(row) + 1, reason: "e-mail inválido." });
 			continue;
 		}
 		rows.push({
@@ -87,7 +92,7 @@ function parseSpreadsheet(buffer: Buffer): { rows: ParsedEmployeeRow[]; skipped:
 			accumulatesRole: accumulates,
 		});
 	}
-	return { rows, skipped };
+	return { rows, skipped, issues };
 }
 
 function maskedImportRow(employee: ParsedEmployeeRow, action: string) {
@@ -103,7 +108,7 @@ function maskedImportRow(employee: ParsedEmployeeRow, action: string) {
 }
 
 async function buildImportPreview(buffer: Buffer) {
-	const { rows, skipped: invalidRows } = parseSpreadsheet(buffer);
+	const { rows, skipped: invalidRows, issues } = parseSpreadsheet(buffer);
 	const existing = await db.select().from(employees);
 	const existingByMatricula = new Map(existing.map((employee) => [employee.matricula, employee]));
 	const seen = new Set<string>();
@@ -127,7 +132,7 @@ async function buildImportPreview(buffer: Buffer) {
 			previewRows.push(maskedImportRow(employee, "novo"));
 		}
 	}
-	if (invalidRows) previewRows.push({ action: `${invalidRows} linha(s) ignorada(s): dados inválidos ou incompletos.` });
+	if (invalidRows) previewRows.push({ action: `${invalidRows} linha(s) ignorada(s): ${issues.slice(0, 5).map((issue) => `linha ${issue.rowNumber} (${issue.reason})`).join("; ")}${issues.length > 5 ? "; ..." : ""}` });
 	return { newCount, updatedCount, skippedCount, rows: previewRows };
 }
 

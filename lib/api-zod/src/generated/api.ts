@@ -300,6 +300,7 @@ export const PreviewEmployeeImportResponse = zod.object({
   "accumulatesRole": zod.boolean().optional(),
   "date": zod.coerce.date().optional(),
   "description": zod.string().optional(),
+  "type": zod.enum(['feriado', 'recesso', 'ponto_facultativo', 'suspensao_expediente', 'outro']).optional(),
   "action": zod.string()
 }))
 })
@@ -329,7 +330,8 @@ export const ListCalendarDatesQueryParams = zod.object({
 export const ListCalendarDatesResponseItem = zod.object({
   "id": zod.number().int(),
   "date": zod.coerce.date(),
-  "description": zod.string()
+  "description": zod.string(),
+  "type": zod.enum(['feriado', 'recesso', 'ponto_facultativo', 'suspensao_expediente', 'outro'])
 })
 export const ListCalendarDatesResponse = zod.array(ListCalendarDatesResponseItem)
 
@@ -342,13 +344,15 @@ export const ListCalendarDatesResponse = zod.array(ListCalendarDatesResponseItem
 
 export const CreateCalendarDateBody = zod.object({
   "date": zod.coerce.date(),
-  "description": zod.string().min(1)
+  "description": zod.string().min(1),
+  "type": zod.enum(['feriado', 'recesso', 'ponto_facultativo', 'suspensao_expediente', 'outro'])
 })
 
 export const CreateCalendarDateResponse = zod.object({
   "id": zod.number().int(),
   "date": zod.coerce.date(),
-  "description": zod.string()
+  "description": zod.string(),
+  "type": zod.enum(['feriado', 'recesso', 'ponto_facultativo', 'suspensao_expediente', 'outro'])
 })
 
 
@@ -361,13 +365,15 @@ export const UpdateCalendarDateParams = zod.object({
 
 export const UpdateCalendarDateBody = zod.object({
   "date": zod.coerce.date().optional(),
-  "description": zod.string().optional()
+  "description": zod.string().optional(),
+  "type": zod.enum(['feriado', 'recesso', 'ponto_facultativo', 'suspensao_expediente', 'outro']).optional()
 })
 
 export const UpdateCalendarDateResponse = zod.object({
   "id": zod.number().int(),
   "date": zod.coerce.date(),
-  "description": zod.string()
+  "description": zod.string(),
+  "type": zod.enum(['feriado', 'recesso', 'ponto_facultativo', 'suspensao_expediente', 'outro'])
 })
 
 
@@ -401,6 +407,7 @@ export const PreviewCalendarImportResponse = zod.object({
   "accumulatesRole": zod.boolean().optional(),
   "date": zod.coerce.date().optional(),
   "description": zod.string().optional(),
+  "type": zod.enum(['feriado', 'recesso', 'ponto_facultativo', 'suspensao_expediente', 'outro']).optional(),
   "action": zod.string()
 }))
 })
@@ -439,7 +446,8 @@ export const ListDispatchesResponseItem = zod.object({
   "authorized_at": zod.coerce.date().nullable(),
   "sent_at": zod.coerce.date().nullable(),
   "error_message": zod.string().nullable(),
-  "delivery_mode": zod.enum(['simulado', 'real'])
+  "delivery_mode": zod.enum(['simulado', 'real']),
+  "file_name": zod.string().nullable()
 })
 export const ListDispatchesResponse = zod.array(ListDispatchesResponseItem)
 
@@ -462,7 +470,8 @@ export const SendDispatchResponse = zod.object({
   "authorized_at": zod.coerce.date().nullable(),
   "sent_at": zod.coerce.date().nullable(),
   "error_message": zod.string().nullable(),
-  "delivery_mode": zod.enum(['simulado', 'real'])
+  "delivery_mode": zod.enum(['simulado', 'real']),
+  "file_name": zod.string().nullable()
 })
 
 
@@ -484,7 +493,8 @@ export const ResendDispatchResponse = zod.object({
   "authorized_at": zod.coerce.date().nullable(),
   "sent_at": zod.coerce.date().nullable(),
   "error_message": zod.string().nullable(),
-  "delivery_mode": zod.enum(['simulado', 'real'])
+  "delivery_mode": zod.enum(['simulado', 'real']),
+  "file_name": zod.string().nullable()
 })
 
 
@@ -534,6 +544,7 @@ export const GetSmtpSettingsResponse = zod.object({
   "port": zod.number().int(),
   "username": zod.string(),
   "senderEmail": zod.string(),
+  "secure": zod.boolean(),
   "passwordSet": zod.boolean(),
   "demoOnly": zod.boolean()
 })
@@ -551,7 +562,8 @@ export const UpdateSmtpSettingsBody = zod.object({
   "port": zod.number().int().min(1).max(updateSmtpSettingsBodyPortMax),
   "username": zod.string().optional(),
   "senderEmail": zod.string(),
-  "appPassword": zod.string().optional()
+  "appPassword": zod.string().optional(),
+  "secure": zod.boolean()
 })
 
 export const UpdateSmtpSettingsResponse = zod.object({
@@ -559,6 +571,7 @@ export const UpdateSmtpSettingsResponse = zod.object({
   "port": zod.number().int(),
   "username": zod.string(),
   "senderEmail": zod.string(),
+  "secure": zod.boolean(),
   "passwordSet": zod.boolean(),
   "demoOnly": zod.boolean()
 })
@@ -622,5 +635,3 @@ export const ReleaseLockResponse = zod.object({
   "heldByThisClient": zod.boolean(),
   "expiresAt": zod.coerce.date().nullable()
 })
-
-

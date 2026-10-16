@@ -109,6 +109,7 @@ export interface ImportPreviewRow {
   accumulatesRole?: boolean;
   date?: string;
   description?: string;
+  type?: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
   action: string;
 }
 
@@ -162,17 +163,20 @@ export interface CalendarEvent {
   id: number;
   date: string;
   description: string;
+  type: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
 }
 
 export interface CalendarEventInput {
   date: string;
   /** @minLength 1 */
   description: string;
+  type: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
 }
 
 export interface CalendarEventUpdate {
   date?: string;
   description?: string;
+  type?: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
 }
 
 export type DispatchStatus = typeof DispatchStatus[keyof typeof DispatchStatus];
@@ -207,6 +211,7 @@ export interface Dispatch {
   /** @nullable */
   error_message: string | null;
   delivery_mode: DispatchDeliveryMode;
+  file_name: string | null;
 }
 
 export type DispatchBatchInputMode = typeof DispatchBatchInputMode[keyof typeof DispatchBatchInputMode];
@@ -251,6 +256,7 @@ export interface SmtpSettings {
   port: number;
   username: string;
   senderEmail: string;
+  secure: boolean;
   passwordSet: boolean;
   demoOnly: boolean;
 }
@@ -264,6 +270,7 @@ export interface SmtpSettingsInput {
   port: number;
   username?: string;
   senderEmail: string;
+  secure: boolean;
   appPassword?: string;
 }
 
@@ -320,4 +327,3 @@ q?: string;
 export type GetLockStateParams = {
 sessionId: string;
 };
-

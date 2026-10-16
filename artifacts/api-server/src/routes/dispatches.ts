@@ -3,7 +3,10 @@ import { Router, type IRouter } from "express";
 import { SendDispatchBatchBody } from "@workspace/api-zod";
 import { db, dispatches, employees, timesheets } from "@workspace/db";
 import { recordAudit, safeString } from "../lib/audit";
-import { cpfHash, maskCpf, normalizeCpf } from "../lib/demo-crypto";
+import { cpfHash, decryptSecret, maskCpf, normalizeCpf } from "../lib/demo-crypto";
+import nodemailer from "nodemailer";
+import path from "node:path";
+import { smtpSettings } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -15,6 +18,7 @@ async function joinedDispatch(id: number) {
 			employeeMatricula: employees.matricula,
 			employeeEmail: employees.email,
 			employeeCpfLastDigits: employees.cpfLastDigits,
+			timesheetPath: timesheets.originalFilePath,
 		})
 		.from(dispatches)
 		.innerJoin(employees, eq(dispatches.employeeId, employees.id))
@@ -35,7 +39,8 @@ function toApiDispatch(row: NonNullable<Awaited<ReturnType<typeof joinedDispatch
 		authorized_at: row.dispatch.authorizedAt?.toISOString() ?? null,
 		sent_at: row.dispatch.sentAt?.toISOString() ?? null,
 		error_message: row.dispatch.errorMessage,
-		delivery_mode: "simulado" as const,
+		delivery_mode: row.dispatch.deliveryMode as "simulado" | "real",
+		file_name: row.timesheetPath ? path.basename(row.timesheetPath) : null,
 	};
 }
 
@@ -52,29 +57,52 @@ async function simulateDispatch(id: number, allowRetry: boolean) {
 
 	const now = new Date();
 	const emailIsValid = Boolean(row.employeeEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.employeeEmail));
-	const status = emailIsValid ? "enviado" : "erro";
-	const message = emailIsValid
-		? "Envio simulado: nenhum e-mail real foi enviado."
-		: "E-mail ausente ou inválido. Nenhuma mensagem foi enviada.";
+	const [settings] = await db.select().from(smtpSettings).where(eq(smtpSettings.id, 1)).limit(1);
+	let status: "enviado" | "erro" = "erro";
+	let deliveryMode: "simulado" | "real" = "simulado";
+	let message = !emailIsValid ? "E-mail ausente ou inválido. Nenhuma mensagem foi enviada." : "Configure SMTP e arquive o PDF antes de enviar.";
+	if (emailIsValid && settings?.host && settings.passwordEncrypted && row.timesheetPath) {
+		try {
+			const transporter = nodemailer.createTransport({
+				host: settings.host,
+				port: settings.port,
+				secure: settings.secure,
+				auth: settings.username ? { user: settings.username, pass: decryptSecret(settings.passwordEncrypted) ?? "" } : undefined,
+				connectionTimeout: 15_000,
+			});
+			await transporter.sendMail({
+				from: settings.senderEmail,
+				to: row.employeeEmail!,
+				subject: `Folha de ponto - ${row.employeeName}`,
+				text: `Segue a folha de ponto de ${row.employeeName}.`,
+				attachments: [{ filename: path.basename(row.timesheetPath), path: row.timesheetPath }],
+			});
+			status = "enviado";
+			deliveryMode = "real";
+			message = "E-mail enviado com sucesso.";
+		} catch (error) {
+			message = error instanceof Error ? `Falha no envio SMTP: ${error.message}` : "Falha no envio SMTP.";
+		}
+	}
 	await db
 		.update(dispatches)
 		.set({
 			status,
-			errorMessage: emailIsValid ? message : "E-mail ausente ou inválido.",
-			deliveryMode: "simulado",
+			errorMessage: status === "enviado" ? null : message,
+			deliveryMode,
 			authorizedAt: now,
 			sentAt: emailIsValid ? now : null,
 			attemptCount: row.dispatch.attemptCount + 1,
 			lastAttemptAt: now,
 		})
 		.where(eq(dispatches.id, id));
-	await recordAudit(emailIsValid ? "email_enviado_simulado" : "email_envio_falhou", "dispatch", String(id), {
+	await recordAudit(status === "enviado" ? "email_enviado" : "email_envio_falhou", "dispatch", String(id), {
 		employeeId: row.dispatch.employeeId,
 		name: row.employeeName,
 		matricula: row.employeeMatricula,
 		competency: "",
 		status,
-		deliveryMode: "simulado",
+		deliveryMode,
 		message,
 	});
 	const updated = await joinedDispatch(id);
