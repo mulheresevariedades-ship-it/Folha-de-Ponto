@@ -54,6 +54,15 @@ const eventTypes = ["feriado", "recesso", "ponto_facultativo", "suspensao_expedi
 type CalendarEventType = (typeof eventTypes)[number];
 type CalendarRow = { date: string; description: string; type: CalendarEventType };
 
+function inferEventType(description: string): CalendarEventType {
+	const normalized = normalizeHeader(description);
+	if (normalized.includes("feriado")) return "feriado";
+	if (normalized.includes("recesso")) return "recesso";
+	if (normalized.includes("facultativo")) return "ponto_facultativo";
+	if (normalized.includes("suspensao") || normalized.includes("suspensaoexpediente")) return "suspensao_expediente";
+	return "outro";
+}
+
 function parseCalendarSheet(buffer: Buffer): { rows: CalendarRow[]; skipped: number } {
 	const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
 	const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -63,8 +72,8 @@ function parseCalendarSheet(buffer: Buffer): { rows: CalendarRow[]; skipped: num
 	const dateColumn = headers.indexOf("data");
 	const descriptionColumn = headers.indexOf("especificacao");
 	const typeColumn = headers.indexOf("tipo");
-	if (dateColumn < 0 || descriptionColumn < 0 || typeColumn < 0) {
-		throw new Error("Cabeçalhos inválidos. Use as colunas Data, Especificação e Tipo.");
+	if (dateColumn < 0 || descriptionColumn < 0) {
+		throw new Error("Cabeçalhos inválidos. A planilha precisa conter as colunas Data e Especificação.");
 	}
 	const rows: CalendarRow[] = [];
 	let skipped = 0;
@@ -72,7 +81,7 @@ function parseCalendarSheet(buffer: Buffer): { rows: CalendarRow[]; skipped: num
 		if (!row.some((cell) => cellText(cell))) continue;
 		const date = parseCalendarDate(row[dateColumn]);
 		const description = cellText(row[descriptionColumn]);
-		const rawType = normalizeHeader(row[typeColumn]);
+		const rawType = typeColumn >= 0 ? normalizeHeader(row[typeColumn]) : "";
 		const typeMap: Record<string, CalendarEventType> = {
 			feriado: "feriado",
 			recesso: "recesso",
@@ -80,7 +89,7 @@ function parseCalendarSheet(buffer: Buffer): { rows: CalendarRow[]; skipped: num
 			suspensaodeexpediente: "suspensao_expediente",
 			outro: "outro",
 		};
-		const type = typeMap[rawType];
+		const type = typeMap[rawType] ?? inferEventType(description);
 		if (!date || !description || !type) {
 			skipped += 1;
 			continue;
@@ -180,9 +189,10 @@ router.patch("/calendar/:id", async (req, res, next): Promise<void> => {
 			res.status(400).json({ message: "Revise a data e sua especificação.", issues: parsed.error.issues });
 			return;
 		}
-		const changes: { date?: string; description?: string; updatedAt: Date } = { updatedAt: new Date() };
+		const changes: { date?: string; description?: string; type?: CalendarEventType; updatedAt: Date } = { updatedAt: new Date() };
 		if (parsed.data.date) changes.date = parsed.data.date.toISOString().slice(0, 10);
 		if (parsed.data.description !== undefined) changes.description = parsed.data.description;
+		if (parsed.data.type !== undefined) changes.type = parsed.data.type;
 		const [updated] = await db
 			.update(calendarEvents)
 			.set(changes)
@@ -195,6 +205,7 @@ router.patch("/calendar/:id", async (req, res, next): Promise<void> => {
 		await recordAudit("data_calendario_atualizada", "calendar", String(id), {
 			date: updated.date,
 			description: updated.description,
+			type: updated.type,
 		});
 		res.json({ id: updated.id, date: updated.date, description: updated.description, type: updated.type });
 	} catch (error) {
