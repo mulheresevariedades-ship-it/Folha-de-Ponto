@@ -138,7 +138,8 @@ export const GenerateTimesheetResponse = zod.unknown()
 export const PreviewBatchBody = zod.object({
   "files": zod.array(zod.instanceof(Blob)),
   "fallbackCompetency": zod.string().optional(),
-  "replaceDuplicates": zod.boolean().optional()
+  "replaceDuplicates": zod.boolean().optional(),
+  "confirmFallback": zod.boolean().optional()
 })
 
 export const PreviewBatchResponse = zod.object({
@@ -149,13 +150,28 @@ export const PreviewBatchResponse = zod.object({
   "matricula": zod.string().nullable(),
   "competency": zod.string(),
   "confidence": zod.number().int(),
+  "competencyDetected": zod.boolean(),
+  "competencySource": zod.enum(['conteudo-pdf', 'ocr', 'fallback', 'nao-identificada']),
   "duplicate": zod.boolean(),
   "duplicateInUpload": zod.boolean(),
+  "duplicateReason": zod.string().nullable(),
   "needsReview": zod.boolean()
 })),
   "newCount": zod.number().int(),
   "duplicateCount": zod.number().int(),
-  "reviewCount": zod.number().int()
+  "reviewCount": zod.number().int(),
+  "unidentifiedCount": zod.number().int(),
+  "errors": zod.array(zod.object({
+  "sourceFilename": zod.string(),
+  "pageNumber": zod.number().int().nullish(),
+  "message": zod.string()
+})),
+  "fileResults": zod.array(zod.object({
+  "sourceFilename": zod.string(),
+  "pages": zod.number().int(),
+  "status": zod.enum(['processado', 'erro']),
+  "message": zod.string().nullable()
+}))
 })
 
 
@@ -165,13 +181,15 @@ export const PreviewBatchResponse = zod.object({
 export const ProcessBatchBody = zod.object({
   "files": zod.array(zod.instanceof(Blob)),
   "fallbackCompetency": zod.string().optional(),
-  "replaceDuplicates": zod.boolean().optional()
+  "replaceDuplicates": zod.boolean().optional(),
+  "confirmFallback": zod.boolean().optional()
 })
 
 export const ProcessBatchResponse = zod.object({
   "created": zod.number().int(),
   "updated": zod.number().int(),
   "skipped": zod.number().int(),
+  "duplicatesInBatch": zod.number().int(),
   "entries": zod.array(zod.object({
   "sourceFilename": zod.string(),
   "pageNumber": zod.number().int(),
@@ -179,9 +197,30 @@ export const ProcessBatchResponse = zod.object({
   "matricula": zod.string().nullable(),
   "competency": zod.string(),
   "confidence": zod.number().int(),
+  "competencyDetected": zod.boolean(),
+  "competencySource": zod.enum(['conteudo-pdf', 'ocr', 'fallback', 'nao-identificada']),
   "duplicate": zod.boolean(),
   "duplicateInUpload": zod.boolean(),
+  "duplicateReason": zod.string().nullable(),
   "needsReview": zod.boolean()
+})),
+  "errors": zod.array(zod.object({
+  "sourceFilename": zod.string(),
+  "pageNumber": zod.number().int().nullish(),
+  "message": zod.string()
+})),
+  "skippedDetails": zod.array(zod.object({
+  "sourceFilename": zod.string(),
+  "pageNumber": zod.number().int(),
+  "name": zod.string(),
+  "competency": zod.string(),
+  "reason": zod.string()
+})),
+  "fileResults": zod.array(zod.object({
+  "sourceFilename": zod.string(),
+  "pages": zod.number().int(),
+  "status": zod.enum(['processado', 'erro']),
+  "message": zod.string().nullable()
 }))
 })
 
@@ -432,7 +471,9 @@ export const ImportCalendarResponse = zod.object({
  */
 export const ListDispatchesQueryParams = zod.object({
   "q": zod.coerce.string().optional(),
-  "status": zod.coerce.string().optional()
+  "status": zod.coerce.string().optional(),
+  "from": zod.date().optional().describe('Data inicial de criacao do envio (AAAA-MM-DD)'),
+  "to": zod.date().optional().describe('Data final de criacao do envio (AAAA-MM-DD)')
 })
 
 export const ListDispatchesResponseItem = zod.object({
@@ -447,7 +488,8 @@ export const ListDispatchesResponseItem = zod.object({
   "sent_at": zod.coerce.date().nullable(),
   "error_message": zod.string().nullable(),
   "delivery_mode": zod.enum(['simulado', 'real']),
-  "file_name": zod.string().nullable()
+  "file_name": zod.string().nullable(),
+  "competency": zod.string().nullish()
 })
 export const ListDispatchesResponse = zod.array(ListDispatchesResponseItem)
 
@@ -471,7 +513,8 @@ export const SendDispatchResponse = zod.object({
   "sent_at": zod.coerce.date().nullable(),
   "error_message": zod.string().nullable(),
   "delivery_mode": zod.enum(['simulado', 'real']),
-  "file_name": zod.string().nullable()
+  "file_name": zod.string().nullable(),
+  "competency": zod.string().nullish()
 })
 
 
@@ -494,7 +537,8 @@ export const ResendDispatchResponse = zod.object({
   "sent_at": zod.coerce.date().nullable(),
   "error_message": zod.string().nullable(),
   "delivery_mode": zod.enum(['simulado', 'real']),
-  "file_name": zod.string().nullable()
+  "file_name": zod.string().nullable(),
+  "competency": zod.string().nullish()
 })
 
 
@@ -546,7 +590,8 @@ export const GetSmtpSettingsResponse = zod.object({
   "senderEmail": zod.string(),
   "secure": zod.boolean(),
   "passwordSet": zod.boolean(),
-  "demoOnly": zod.boolean()
+  "demoOnly": zod.boolean(),
+  "source": zod.enum(['database', 'environment', 'none', 'demo'])
 })
 
 
@@ -562,8 +607,8 @@ export const UpdateSmtpSettingsBody = zod.object({
   "port": zod.number().int().min(1).max(updateSmtpSettingsBodyPortMax),
   "username": zod.string().optional(),
   "senderEmail": zod.string(),
-  "appPassword": zod.string().optional(),
-  "secure": zod.boolean()
+  "secure": zod.boolean(),
+  "appPassword": zod.string().optional()
 })
 
 export const UpdateSmtpSettingsResponse = zod.object({
@@ -573,7 +618,8 @@ export const UpdateSmtpSettingsResponse = zod.object({
   "senderEmail": zod.string(),
   "secure": zod.boolean(),
   "passwordSet": zod.boolean(),
-  "demoOnly": zod.boolean()
+  "demoOnly": zod.boolean(),
+  "source": zod.enum(['database', 'environment', 'none', 'demo'])
 })
 
 
@@ -635,3 +681,5 @@ export const ReleaseLockResponse = zod.object({
   "heldByThisClient": zod.boolean(),
   "expiresAt": zod.coerce.date().nullable()
 })
+
+

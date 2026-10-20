@@ -7,13 +7,21 @@
  */
 
 export * from './auditEvent';
+export * from './batchError';
+export * from './batchFileResult';
+export * from './batchFileResultStatus';
 export * from './batchPreview';
 export * from './batchPreviewItem';
+export * from './batchPreviewItemCompetencySource';
 export * from './batchProcessResult';
+export * from './batchSkippedDetail';
 export * from './batchUploadInput';
 export * from './calendarEvent';
 export * from './calendarEventInput';
+export * from './calendarEventInputType';
+export * from './calendarEventType';
 export * from './calendarEventUpdate';
+export * from './calendarEventUpdateType';
 export * from './dashboardMetrics';
 export * from './dispatch';
 export * from './dispatchBatchInput';
@@ -31,6 +39,7 @@ export * from './getLockStateParams';
 export * from './healthStatus';
 export * from './importPreview';
 export * from './importPreviewRow';
+export * from './importPreviewRowType';
 export * from './importSummary';
 export * from './listAuditParams';
 export * from './listCalendarDatesParams';
@@ -41,6 +50,7 @@ export * from './lockSessionInput';
 export * from './lockState';
 export * from './smtpSettings';
 export * from './smtpSettingsInput';
+export * from './smtpSettingsSource';
 export * from './smtpTestResult';
 export * from './spreadsheetUpload';
 export * from './timesheet';

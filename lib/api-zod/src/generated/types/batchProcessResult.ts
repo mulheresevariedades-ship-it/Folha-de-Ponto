@@ -5,11 +5,18 @@
  * API do Ponto Digital DIGEP em modo de demonstração
  * OpenAPI spec version: 0.1.0
  */
+import type { BatchError } from './batchError';
+import type { BatchFileResult } from './batchFileResult';
 import type { BatchPreviewItem } from './batchPreviewItem';
+import type { BatchSkippedDetail } from './batchSkippedDetail';
 
 export interface BatchProcessResult {
   created: number;
   updated: number;
   skipped: number;
+  duplicatesInBatch: number;
   entries: BatchPreviewItem[];
+  errors: BatchError[];
+  skippedDetails: BatchSkippedDetail[];
+  fileResults: BatchFileResult[];
 }

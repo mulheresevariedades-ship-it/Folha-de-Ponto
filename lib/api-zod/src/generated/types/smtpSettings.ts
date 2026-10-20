@@ -5,6 +5,7 @@
  * API do Ponto Digital DIGEP em modo de demonstração
  * OpenAPI spec version: 0.1.0
  */
+import type { SmtpSettingsSource } from './smtpSettingsSource';
 
 export interface SmtpSettings {
   host: string;
@@ -14,4 +15,5 @@ export interface SmtpSettings {
   secure: boolean;
   passwordSet: boolean;
   demoOnly: boolean;
+  source: SmtpSettingsSource;
 }

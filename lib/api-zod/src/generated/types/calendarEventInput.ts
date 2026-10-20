@@ -5,10 +5,11 @@
  * API do Ponto Digital DIGEP em modo de demonstração
  * OpenAPI spec version: 0.1.0
  */
+import type { CalendarEventInputType } from './calendarEventInputType';
 
 export interface CalendarEventInput {
   date: Date;
   /** @minLength 1 */
   description: string;
-  type: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
+  type: CalendarEventInputType;
 }

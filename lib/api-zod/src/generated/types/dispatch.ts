@@ -23,4 +23,8 @@ export interface Dispatch {
   /** @nullable */
   error_message: string | null;
   delivery_mode: DispatchDeliveryMode;
+  /** @nullable */
+  file_name: string | null;
+  /** @nullable */
+  competency?: string | null;
 }

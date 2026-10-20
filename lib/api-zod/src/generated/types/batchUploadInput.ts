@@ -10,4 +10,5 @@ export interface BatchUploadInput {
   files: Blob[];
   fallbackCompetency?: string;
   replaceDuplicates?: boolean;
+  confirmFallback?: boolean;
 }

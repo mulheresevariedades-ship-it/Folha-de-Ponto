@@ -100,6 +100,17 @@ export interface SpreadsheetUpload {
   file: Blob;
 }
 
+export type ImportPreviewRowType = typeof ImportPreviewRowType[keyof typeof ImportPreviewRowType];
+
+
+export const ImportPreviewRowType = {
+  feriado: 'feriado',
+  recesso: 'recesso',
+  ponto_facultativo: 'ponto_facultativo',
+  suspensao_expediente: 'suspensao_expediente',
+  outro: 'outro',
+} as const;
+
 export interface ImportPreviewRow {
   name?: string;
   matricula?: string;
@@ -109,7 +120,7 @@ export interface ImportPreviewRow {
   accumulatesRole?: boolean;
   date?: string;
   description?: string;
-  type?: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
+  type?: ImportPreviewRowType;
   action: string;
 }
 
@@ -130,7 +141,18 @@ export interface BatchUploadInput {
   files: Blob[];
   fallbackCompetency?: string;
   replaceDuplicates?: boolean;
+  confirmFallback?: boolean;
 }
+
+export type BatchPreviewItemCompetencySource = typeof BatchPreviewItemCompetencySource[keyof typeof BatchPreviewItemCompetencySource];
+
+
+export const BatchPreviewItemCompetencySource = {
+  'conteudo-pdf': 'conteudo-pdf',
+  ocr: 'ocr',
+  fallback: 'fallback',
+  'nao-identificada': 'nao-identificada',
+} as const;
 
 export interface BatchPreviewItem {
   sourceFilename: string;
@@ -140,9 +162,44 @@ export interface BatchPreviewItem {
   matricula: string | null;
   competency: string;
   confidence: number;
+  competencyDetected: boolean;
+  competencySource: BatchPreviewItemCompetencySource;
   duplicate: boolean;
   duplicateInUpload: boolean;
+  /** @nullable */
+  duplicateReason: string | null;
   needsReview: boolean;
+}
+
+export interface BatchError {
+  sourceFilename: string;
+  /** @nullable */
+  pageNumber?: number | null;
+  message: string;
+}
+
+export type BatchFileResultStatus = typeof BatchFileResultStatus[keyof typeof BatchFileResultStatus];
+
+
+export const BatchFileResultStatus = {
+  processado: 'processado',
+  erro: 'erro',
+} as const;
+
+export interface BatchFileResult {
+  sourceFilename: string;
+  pages: number;
+  status: BatchFileResultStatus;
+  /** @nullable */
+  message: string | null;
+}
+
+export interface BatchSkippedDetail {
+  sourceFilename: string;
+  pageNumber: number;
+  name: string;
+  competency: string;
+  reason: string;
 }
 
 export interface BatchPreview {
@@ -150,33 +207,73 @@ export interface BatchPreview {
   newCount: number;
   duplicateCount: number;
   reviewCount: number;
+  unidentifiedCount: number;
+  errors: BatchError[];
+  fileResults: BatchFileResult[];
 }
 
 export interface BatchProcessResult {
   created: number;
   updated: number;
   skipped: number;
+  duplicatesInBatch: number;
   entries: BatchPreviewItem[];
+  errors: BatchError[];
+  skippedDetails: BatchSkippedDetail[];
+  fileResults: BatchFileResult[];
 }
+
+export type CalendarEventType = typeof CalendarEventType[keyof typeof CalendarEventType];
+
+
+export const CalendarEventType = {
+  feriado: 'feriado',
+  recesso: 'recesso',
+  ponto_facultativo: 'ponto_facultativo',
+  suspensao_expediente: 'suspensao_expediente',
+  outro: 'outro',
+} as const;
 
 export interface CalendarEvent {
   id: number;
   date: string;
   description: string;
-  type: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
+  type: CalendarEventType;
 }
+
+export type CalendarEventInputType = typeof CalendarEventInputType[keyof typeof CalendarEventInputType];
+
+
+export const CalendarEventInputType = {
+  feriado: 'feriado',
+  recesso: 'recesso',
+  ponto_facultativo: 'ponto_facultativo',
+  suspensao_expediente: 'suspensao_expediente',
+  outro: 'outro',
+} as const;
 
 export interface CalendarEventInput {
   date: string;
   /** @minLength 1 */
   description: string;
-  type: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
+  type: CalendarEventInputType;
 }
+
+export type CalendarEventUpdateType = typeof CalendarEventUpdateType[keyof typeof CalendarEventUpdateType];
+
+
+export const CalendarEventUpdateType = {
+  feriado: 'feriado',
+  recesso: 'recesso',
+  ponto_facultativo: 'ponto_facultativo',
+  suspensao_expediente: 'suspensao_expediente',
+  outro: 'outro',
+} as const;
 
 export interface CalendarEventUpdate {
   date?: string;
   description?: string;
-  type?: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
+  type?: CalendarEventUpdateType;
 }
 
 export type DispatchStatus = typeof DispatchStatus[keyof typeof DispatchStatus];
@@ -211,7 +308,10 @@ export interface Dispatch {
   /** @nullable */
   error_message: string | null;
   delivery_mode: DispatchDeliveryMode;
+  /** @nullable */
   file_name: string | null;
+  /** @nullable */
+  competency?: string | null;
 }
 
 export type DispatchBatchInputMode = typeof DispatchBatchInputMode[keyof typeof DispatchBatchInputMode];
@@ -251,6 +351,16 @@ export interface AuditEvent {
   date: string;
 }
 
+export type SmtpSettingsSource = typeof SmtpSettingsSource[keyof typeof SmtpSettingsSource];
+
+
+export const SmtpSettingsSource = {
+  database: 'database',
+  environment: 'environment',
+  none: 'none',
+  demo: 'demo',
+} as const;
+
 export interface SmtpSettings {
   host: string;
   port: number;
@@ -259,6 +369,7 @@ export interface SmtpSettings {
   secure: boolean;
   passwordSet: boolean;
   demoOnly: boolean;
+  source: SmtpSettingsSource;
 }
 
 export interface SmtpSettingsInput {
@@ -318,6 +429,14 @@ year?: number;
 export type ListDispatchesParams = {
 q?: string;
 status?: string;
+/**
+ * Data inicial de criacao do envio (AAAA-MM-DD)
+ */
+from?: string;
+/**
+ * Data final de criacao do envio (AAAA-MM-DD)
+ */
+to?: string;
 };
 
 export type ListAuditParams = {
@@ -327,3 +446,4 @@ q?: string;
 export type GetLockStateParams = {
 sessionId: string;
 };
+

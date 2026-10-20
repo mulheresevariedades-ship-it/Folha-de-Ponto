@@ -5,6 +5,7 @@
  * API do Ponto Digital DIGEP em modo de demonstração
  * OpenAPI spec version: 0.1.0
  */
+import type { BatchPreviewItemCompetencySource } from './batchPreviewItemCompetencySource';
 
 export interface BatchPreviewItem {
   sourceFilename: string;
@@ -14,7 +15,11 @@ export interface BatchPreviewItem {
   matricula: string | null;
   competency: string;
   confidence: number;
+  competencyDetected: boolean;
+  competencySource: BatchPreviewItemCompetencySource;
   duplicate: boolean;
   duplicateInUpload: boolean;
+  /** @nullable */
+  duplicateReason: string | null;
   needsReview: boolean;
 }

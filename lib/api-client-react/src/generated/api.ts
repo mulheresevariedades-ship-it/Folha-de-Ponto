@@ -675,6 +675,9 @@ if(batchUploadInput.fallbackCompetency !== undefined) {
 if(batchUploadInput.replaceDuplicates !== undefined) {
  formData.append(`replaceDuplicates`, batchUploadInput.replaceDuplicates.toString())
  }
+if(batchUploadInput.confirmFallback !== undefined) {
+ formData.append(`confirmFallback`, batchUploadInput.confirmFallback.toString())
+ }
 
   return customFetch<BatchPreview>(getPreviewBatchUrl(),
   {
@@ -756,6 +759,9 @@ if(batchUploadInput.fallbackCompetency !== undefined) {
  }
 if(batchUploadInput.replaceDuplicates !== undefined) {
  formData.append(`replaceDuplicates`, batchUploadInput.replaceDuplicates.toString())
+ }
+if(batchUploadInput.confirmFallback !== undefined) {
+ formData.append(`confirmFallback`, batchUploadInput.confirmFallback.toString())
  }
 
   return customFetch<BatchProcessResult>(getProcessBatchUrl(),

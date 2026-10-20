@@ -9,4 +9,12 @@
 export type ListDispatchesParams = {
 q?: string;
 status?: string;
+/**
+ * Data inicial de criacao do envio (AAAA-MM-DD)
+ */
+from?: Date;
+/**
+ * Data final de criacao do envio (AAAA-MM-DD)
+ */
+to?: Date;
 };

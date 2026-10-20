@@ -5,6 +5,7 @@
  * API do Ponto Digital DIGEP em modo de demonstração
  * OpenAPI spec version: 0.1.0
  */
+import type { ImportPreviewRowType } from './importPreviewRowType';
 
 export interface ImportPreviewRow {
   name?: string;
@@ -15,6 +16,6 @@ export interface ImportPreviewRow {
   accumulatesRole?: boolean;
   date?: Date;
   description?: string;
-  type?: 'feriado' | 'recesso' | 'ponto_facultativo' | 'suspensao_expediente' | 'outro';
+  type?: ImportPreviewRowType;
   action: string;
 }

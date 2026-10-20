@@ -383,6 +383,14 @@ paths:
         - name: status
           in: query
           schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+          description: Data inicial de criacao do envio (AAAA-MM-DD)
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+          description: Data final de criacao do envio (AAAA-MM-DD)
       responses:
         "200":
           description: Registros de envio
@@ -670,6 +678,7 @@ components:
           items: { type: string, format: binary }
         fallbackCompetency: { type: string }
         replaceDuplicates: { type: boolean }
+        confirmFallback: { type: boolean }
       required: [files]
     BatchPreviewItem:
       type: object
@@ -680,10 +689,37 @@ components:
         matricula: { type: [string, "null"] }
         competency: { type: string }
         confidence: { type: integer }
+        competencyDetected: { type: boolean }
+        competencySource: { type: string, enum: [conteudo-pdf, ocr, fallback, nao-identificada] }
         duplicate: { type: boolean }
         duplicateInUpload: { type: boolean }
+        duplicateReason: { type: [string, "null"] }
         needsReview: { type: boolean }
-      required: [sourceFilename, pageNumber, name, matricula, competency, confidence, duplicate, duplicateInUpload, needsReview]
+      required: [sourceFilename, pageNumber, name, matricula, competency, competencyDetected, competencySource, confidence, duplicate, duplicateInUpload, duplicateReason, needsReview]
+    BatchError:
+      type: object
+      properties:
+        sourceFilename: { type: string }
+        pageNumber: { type: [integer, "null"] }
+        message: { type: string }
+      required: [sourceFilename, message]
+    BatchFileResult:
+      type: object
+      properties:
+        sourceFilename: { type: string }
+        pages: { type: integer }
+        status: { type: string, enum: [processado, erro] }
+        message: { type: [string, "null"] }
+      required: [sourceFilename, pages, status, message]
+    BatchSkippedDetail:
+      type: object
+      properties:
+        sourceFilename: { type: string }
+        pageNumber: { type: integer }
+        name: { type: string }
+        competency: { type: string }
+        reason: { type: string }
+      required: [sourceFilename, pageNumber, name, competency, reason]
     BatchPreview:
       type: object
       properties:
@@ -693,17 +729,34 @@ components:
         newCount: { type: integer }
         duplicateCount: { type: integer }
         reviewCount: { type: integer }
-      required: [entries, newCount, duplicateCount, reviewCount]
+        unidentifiedCount: { type: integer }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/BatchError" }
+        fileResults:
+          type: array
+          items: { $ref: "#/components/schemas/BatchFileResult" }
+      required: [entries, newCount, duplicateCount, reviewCount, unidentifiedCount, errors, fileResults]
     BatchProcessResult:
       type: object
       properties:
         created: { type: integer }
         updated: { type: integer }
         skipped: { type: integer }
+        duplicatesInBatch: { type: integer }
         entries:
           type: array
           items: { $ref: "#/components/schemas/BatchPreviewItem" }
-      required: [created, updated, skipped, entries]
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/BatchError" }
+        skippedDetails:
+          type: array
+          items: { $ref: "#/components/schemas/BatchSkippedDetail" }
+        fileResults:
+          type: array
+          items: { $ref: "#/components/schemas/BatchFileResult" }
+      required: [created, updated, skipped, duplicatesInBatch, entries, errors, skippedDetails, fileResults]
     CalendarEvent:
       type: object
       properties:
@@ -740,6 +793,7 @@ components:
         error_message: { type: [string, "null"] }
         delivery_mode: { type: string, enum: [simulado, real] }
         file_name: { type: [string, "null"] }
+        competency: { type: [string, "null"] }
       required: [id, employee_name, employee_matricula, employee_email, employee_cpf, status, created_at, authorized_at, sent_at, error_message, delivery_mode, file_name]
     DispatchBatchInput:
       type: object
@@ -785,7 +839,8 @@ components:
         secure: { type: boolean }
         passwordSet: { type: boolean }
         demoOnly: { type: boolean }
-      required: [host, port, username, senderEmail, secure, passwordSet, demoOnly]
+        source: { type: string, enum: [database, environment, none, demo] }
+      required: [host, port, username, senderEmail, secure, passwordSet, demoOnly, source]
     SmtpSettingsInput:
       type: object
       properties:
