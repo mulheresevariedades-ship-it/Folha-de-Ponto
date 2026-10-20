@@ -11,7 +11,7 @@ import { PDFDocument } from "pdf-lib";
 import { createWorker } from "tesseract.js";
 import { db, batches, employees, timesheets } from "@workspace/db";
 import { recordAudit, normalizeSearch } from "../lib/audit";
-import { dataRoot } from "../lib/storage";
+import { archiveStore, toArchiveKey, type ArchiveStore } from "../lib/archive-store";
 import {
 	competencyFromContent,
 	isPdfBuffer,
@@ -104,27 +104,23 @@ function isTrue(value: unknown): boolean {
 	return value === true || ["1", "true", "sim", "yes"].includes(String(value ?? "").trim().toLocaleLowerCase("pt-BR"));
 }
 
-async function pathExists(target: string): Promise<boolean> {
-	return fs
-		.access(target)
-		.then(() => true)
-		.catch(() => false);
-}
-
-async function makeOldPath(filePath: string): Promise<string> {
-	const parsed = path.parse(filePath);
-	const base = oldTimesheetFileName(filePath, new Date());
-	if (!(await pathExists(base))) return base;
+async function makeOldKey(archiveKey: string, store: ArchiveStore): Promise<string> {
+	const slash = archiveKey.lastIndexOf("/");
+	const directory = slash === -1 ? "" : archiveKey.slice(0, slash + 1);
+	const oldName = oldTimesheetFileName(archiveKey, new Date());
+	const base = `${directory}${oldName}`;
+	if (!(await store.exists(base))) return base;
+	const parsed = path.parse(oldName);
 	let candidate = base;
 	for (let suffix = 1; suffix <= 50; suffix += 1) {
-		candidate = path.join(parsed.dir, `${path.parse(base).name}-${String(suffix).padStart(3, "0")}${parsed.ext}`);
-		if (!(await pathExists(candidate))) return candidate;
+		candidate = `${directory}${parsed.name}-${String(suffix).padStart(3, "0")}${parsed.ext}`;
+		if (!(await store.exists(candidate))) return candidate;
 	}
-	return path.join(parsed.dir, `${parsed.name}_OLD_${Date.now()}${parsed.ext}`);
+	return `${directory}${path.parse(archiveKey).name}_OLD_${Date.now()}${path.extname(archiveKey) || ".pdf"}`;
 }
 
 /** Official destination: Folhas_AAAA-MM/Nome_do_servidor-AAAA-MM.pdf */
-function officialArchivePath(entry: AnalysisEntry): string {
+function officialArchiveKey(entry: AnalysisEntry): string {
 	const displayName = entry.employee?.name || entry.name;
 	const fileHash = createHash("sha256").update(entry.pageBuffer).digest("hex");
 	const fileName = officialTimesheetFileName({
@@ -133,7 +129,7 @@ function officialArchivePath(entry: AnalysisEntry): string {
 		matricula: entry.matricula,
 		unidentifiedHash: fileHash,
 	});
-	return path.join(dataRoot(), monthFolderName(entry.competency), fileName);
+	return `${monthFolderName(entry.competency)}/${fileName}`;
 }
 
 async function recognizePage(imagePath: string) {
@@ -366,10 +362,10 @@ function toPreview(entries: AnalysisEntry[], errors: AnalysisError[] = [], fileR
 
 type FileChange = { target: string; backupPath: string; restorePath: string };
 
-async function restoreChanges(changes: FileChange[]): Promise<void> {
+async function restoreChanges(store: ArchiveStore, changes: FileChange[]): Promise<void> {
 	for (const change of [...changes].reverse()) {
-		await fs.rm(change.target, { force: true }).catch(() => undefined);
-		await fs.rename(change.backupPath, change.restorePath).catch(() => undefined);
+		await store.remove(change.target);
+		await store.move(change.backupPath, change.restorePath).catch(() => undefined);
 	}
 }
 
@@ -385,26 +381,26 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 	const [existing] = await db.select().from(timesheets).where(criteria).limit(1);
 	if (existing && !replaceDuplicates) return "skipped";
 
-	const archivePath = officialArchivePath(entry);
-	await fs.mkdir(path.dirname(archivePath), { recursive: true });
+	const store = archiveStore();
+	const archiveKey = officialArchiveKey(entry);
 	const changes: FileChange[] = [];
 	try {
 		if (existing?.originalFilePath) {
-			const previous = path.resolve(existing.originalFilePath);
-			if (previous !== path.resolve(archivePath) && (await pathExists(previous))) {
-				const backupPath = await makeOldPath(archivePath);
-				await fs.rename(previous, backupPath);
+			const previous = toArchiveKey(existing.originalFilePath);
+			if (previous && previous !== archiveKey && (await store.exists(previous))) {
+				const backupPath = await makeOldKey(archiveKey, store);
+				await store.move(previous, backupPath);
 				changes.push({ target: previous, backupPath, restorePath: previous });
 			}
 		}
-		if (await pathExists(archivePath)) {
-			const backupPath = await makeOldPath(archivePath);
-			await fs.rename(archivePath, backupPath);
-			changes.push({ target: archivePath, backupPath, restorePath: archivePath });
+		if (await store.exists(archiveKey)) {
+			const backupPath = await makeOldKey(archiveKey, store);
+			await store.move(archiveKey, backupPath);
+			changes.push({ target: archiveKey, backupPath, restorePath: archiveKey });
 		}
-		await fs.writeFile(archivePath, entry.pageBuffer);
+		await store.write(archiveKey, entry.pageBuffer);
 	} catch (error) {
-		await restoreChanges(changes);
+		await restoreChanges(store, changes);
 		throw error;
 	}
 
@@ -434,7 +430,7 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 					matricula: entry.matricula,
 					competencySource: entry.competencySource,
 				},
-				originalFilePath: archivePath,
+				originalFilePath: archiveKey,
 				updatedAt: new Date(),
 			};
 			if (existing) {
@@ -444,8 +440,8 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 			}
 		});
 	} catch (error) {
-		await fs.rm(archivePath, { force: true }).catch(() => undefined);
-		await restoreChanges(changes);
+		await store.remove(archiveKey);
+		await restoreChanges(store, changes);
 		throw error;
 	}
 	return existing ? "updated" : "created";
@@ -486,9 +482,7 @@ async function persistEntries(
 		return { conflict: true, preview: toPreview(entries, analysis.errors, analysis.fileResults) };
 	}
 
-	const root = dataRoot();
-	const sourceDirectory = path.join(root, "uploads", "sources");
-	await fs.mkdir(sourceDirectory, { recursive: true }).catch(() => undefined);
+	const store = archiveStore();
 	const batchIds = new Map<string, string | null>();
 	const errors: AnalysisError[] = [...analysis.errors];
 	for (const entry of entries) {
@@ -499,8 +493,8 @@ async function persistEntries(
 				batchIds.set(entry.sourceHash, previous.id);
 				continue;
 			}
-			const sourcePath = path.join(sourceDirectory, `${entry.sourceHash}.pdf`);
-			await fs.writeFile(sourcePath, entry.sourceBuffer);
+			const sourcePath = `uploads/sources/${entry.sourceHash}.pdf`;
+			await store.write(sourcePath, entry.sourceBuffer);
 			const [batch] = await db
 				.insert(batches)
 				.values({

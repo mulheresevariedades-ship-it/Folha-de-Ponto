@@ -50,6 +50,32 @@ $env:PONTO_DATA_DIR="D:\archive\folhas"   # opcional
 pnpm --filter @workspace/api-server run demo
 ```
 
+## Arquivo permanente em bucket (S3/R2)
+
+Para produção, os PDFs podem ser arquivados em um bucket S3-compatível
+(Cloudflare R2, AWS S3, MinIO) em vez da pasta local — no Vercel o disco da
+function é efêmero (`/tmp`), então sem bucket os arquivos não sobrevivem a
+novos deploys.
+
+- Ative definindo `S3_BUCKET`, `S3_ACCESS_KEY_ID` e `S3_SECRET_ACCESS_KEY`
+  (mais `S3_ENDPOINT` e `S3_REGION` para R2/MinIO; veja `.env.example`). Sem
+  essas variáveis, o sistema continua usando a pasta local — o modo portátil
+  não muda.
+- O bucket fica **privado**: o download continua pela API
+  (`GET /api/timesheets/:id/file`), o que evita URLs públicas com dados de
+  servidores (LGPD).
+- As convenções valem igualmente no bucket: a substituição de folha antiga
+  grava o `_OLD_AAAAMMDD-HHMMSS` via cópia server-side (o S3 não tem rename).
+- A estrutura no bucket espelha a local: `Folhas_AAAA-MM/Nome-AAAA-MM.pdf` e
+  `uploads/sources/<hash>.pdf` na raiz do bucket. Use um bucket dedicado.
+
+Passos no Cloudflare R2 (recomendado: free tier e zero custo de egress):
+crie a conta, ative o R2, crie o bucket, gere uma API token com permissão de
+leitura/escrita no bucket e copie o Access Key ID + Secret + endpoint da
+conta. As credenciais vão direto para as variáveis de ambiente (Vercel
+Settings → Environment Variables ou `.env` local) — nunca no código nem em
+commits.
+
 ## Convenções do arquivo de folhas
 
 - Nome oficial sempre no padrão `Folhas_AAAA-MM/Nome_do_servidor-AAAA-MM.pdf`.

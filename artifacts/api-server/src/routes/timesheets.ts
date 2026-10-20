@@ -1,6 +1,5 @@
 import { and, desc, eq, ilike, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
-import path from "node:path";
 import {
 	AlignmentType,
 	Document,
@@ -16,8 +15,8 @@ import {
 import { ReviewTimesheetBody } from "@workspace/api-zod";
 import { calendarEvents, db, dispatches, employees, timesheets } from "@workspace/db";
 import { recordAudit, safeString } from "../lib/audit";
+import { archiveStore, toArchiveKey } from "../lib/archive-store";
 import { cpfHash, maskCpf, normalizeCpf } from "../lib/demo-crypto";
-import { dataRoot } from "../lib/storage";
 
 const router: IRouter = Router();
 
@@ -226,20 +225,20 @@ router.patch("/timesheets/:id/review", async (req, res, next): Promise<void> => 
 router.get("/timesheets/:id/file", async (req, res, next): Promise<void> => {
 	try {
 		const [sheet] = await db.select().from(timesheets).where(eq(timesheets.reference, req.params.id)).limit(1);
-		if (!sheet?.originalFilePath) {
+		const archiveKey = toArchiveKey(sheet?.originalFilePath);
+		if (!archiveKey) {
 			res.status(404).json({ message: "Arquivo não encontrado." });
 			return;
 		}
-		const root = dataRoot();
-		const absolutePath = path.resolve(sheet.originalFilePath);
-		const relativePath = path.relative(root, absolutePath);
-		if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+		// O arquivo vem do store (filesystem ou bucket S3-compatível) em vez de
+		// um caminho local fixo; o bucket permanece privado, com o download
+		// servido pela API.
+		const file = await archiveStore().read(archiveKey);
+		if (!file) {
 			res.status(404).json({ message: "Arquivo não encontrado." });
 			return;
 		}
-		res.type("application/pdf").sendFile(absolutePath, (error) => {
-			if (error && !res.headersSent) next(error);
-		});
+		res.type("application/pdf").send(file);
 	} catch (error) {
 		next(error);
 	}
