@@ -44,7 +44,17 @@ const isoDate = (d: Date | string | null | undefined) => {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 const initials = (s: string) => s.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
-const errorMessage = (e: unknown) => e instanceof Error ? e.message : 'Não foi possível concluir a operação.';
+const LOCK_HELD_MESSAGE = 'Sistema em uso por outro usuário.';
+const LOCK_EXPIRED_MESSAGE = 'A sessão de edição expirou. Atualize a página para retomar.';
+const errorMessage = (e: unknown) => {
+  if (typeof e === 'object' && e !== null) {
+    const failure = e as { status?: number; data?: { message?: unknown } | null };
+    const detail = typeof failure.data?.message === 'string' && failure.data.message.trim() ? failure.data.message.trim() : '';
+    if (failure.status === 423) return detail || LOCK_HELD_MESSAGE;
+    if (detail) return detail;
+  }
+  return e instanceof Error ? e.message : 'Não foi possível concluir a operação.';
+};
 
 function AppFrame() {
   const [location, setLocation] = useLocation();
@@ -59,23 +69,46 @@ function AppFrame() {
     localStorage.setItem('digep-session-id', id);
     return id;
   });
-  const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 3800); };
-  const currentPage = (Object.entries(paths).find(([, path]) => path === location)?.[0] ?? 'inicio') as Page;
   const lockParams = { sessionId };
   const lockKey = getGetLockStateQueryKey(lockParams);
   const lockQuery = useGetLockState(lockParams, { query: { queryKey: lockKey, refetchInterval: 12000 } });
   const heartbeat = useHeartbeatLock();
   const release = useReleaseLock();
+  const notify = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(''), 3800);
+    // Erro 423 da trava: reconsulta o estado para refletir o bloqueio/liberação no banner.
+    if (message === LOCK_HELD_MESSAGE || message === LOCK_EXPIRED_MESSAGE) {
+      void queryClient.invalidateQueries({ queryKey: lockKey });
+    }
+  };
+  const currentPage = (Object.entries(paths).find(([, path]) => path === location)?.[0] ?? 'inicio') as Page;
   const lock = lockQuery.data;
-  const readOnly = lockQuery.isLoading || lockQuery.isError || !lock?.heldByThisClient;
+  const lockPending = lockQuery.isLoading;
+  const lockError = lockQuery.isError;
+  const readOnly = lockPending || lockError || !lock?.heldByThisClient;
 
   useEffect(() => {
-    void heartbeat.mutateAsync({ data: { sessionId } }).then(() => queryClient.invalidateQueries({ queryKey: lockKey })).catch(() => undefined);
-    const timer = window.setInterval(() => {
-      void heartbeat.mutateAsync({ data: { sessionId } }).then(() => queryClient.invalidateQueries({ queryKey: lockKey })).catch(() => undefined);
-    }, 10000);
+    const beat = () => {
+      void heartbeat.mutateAsync({ data: { sessionId } })
+        .then(() => queryClient.invalidateQueries({ queryKey: lockKey }))
+        .catch(() => undefined);
+    };
+    // Ao voltar o foco/visibilidade, renova imediatamente: o navegador throttliza
+    // os timers de abas em segundo plano e o lease de 30s expiraria.
+    const recover = () => {
+      beat();
+      void queryClient.invalidateQueries({ queryKey: lockKey });
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') recover(); };
+    beat();
+    const timer = window.setInterval(beat, 10000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', recover);
     return () => {
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', recover);
       void release.mutateAsync({ data: { sessionId } }).catch(() => undefined);
     };
   // one lease per mounted browser session
@@ -122,11 +155,12 @@ function AppFrame() {
           <button className="mobile-menu" type="button" aria-label="Abrir navegação" data-testid="button-mobile-menu" onClick={() => setMenuOpen((v) => !v)}><Menu size={17}/></button>
           <div className="topline-right" data-testid="status-lock">
             <span className={`lease-dot ${readOnly ? 'blocked' : ''}`}/>
-            <span>{lockQuery.isLoading ? 'Consultando edição' : readOnly ? 'Somente leitura · outra sessão ativa' : 'Edição disponível nesta sessão'}</span>
+            <span>{lockPending ? 'Consultando edição' : lockError ? 'Sem resposta da trava de edição' : readOnly ? (lock?.locked ? 'Somente leitura · outra sessão ativa' : 'Renovando trava de edição') : 'Edição disponível nesta sessão'}</span>
             {lock?.expiresAt && <span>· expira {new Date(lock.expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
         </div>
-        {readOnly && <div className="read-only" data-testid="status-readonly"><LockKeyhole size={15} style={{ verticalAlign: 'middle', marginRight: 7 }}/>Edição bloqueada por outra sessão. Consulte os registros, mas aguarde a liberação antes de alterar dados.</div>}
+        {!lockPending && lockError && <div className="read-only" role="alert" data-testid="status-readonly"><AlertCircle size={15} style={{ verticalAlign: 'middle', marginRight: 7 }}/>Não foi possível consultar a trava de edição; os botões de gravação ficam desativados até a conexão voltar. <button className="text-action" style={{ textDecoration: 'underline' }} onClick={() => void lockQuery.refetch()}>Tentar novamente</button></div>}
+        {!lockPending && !lockError && readOnly && <div className="read-only" data-testid="status-readonly"><LockKeyhole size={15} style={{ verticalAlign: 'middle', marginRight: 7 }}/>{lock?.locked ? 'Sistema em uso por outro usuário. Consulte os registros; a edição será liberada automaticamente quando a outra sessão encerrar.' : 'A trava de edição desta sessão ainda não foi renovada; os botões ficam disponíveis em instantes.'}</div>}
         {currentPage === 'inicio' && <DashboardPage metrics={metrics} loading={dashboardQuery.isLoading} error={dashboardQuery.isError} competency={competency} setCompetency={setCompetency} sheets={sheetRows} sheetLoading={sheetQuery.isLoading} dispatches={dispatchRows} activity={activityRows} onRetry={() => { void dashboardQuery.refetch(); void sheetQuery.refetch(); }} navigate={(p) => setLocation(paths[p])}/>}
         {currentPage === 'folhas' && <TimesheetsPage competency={competency} setCompetency={setCompetency} readOnly={readOnly} notify={notify} invalidate={invalidate}/>}
         {currentPage === 'servidores' && <EmployeesPage readOnly={readOnly} notify={notify} invalidate={invalidate}/>}
