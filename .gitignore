@@ -52,3 +52,8 @@ Thumbs.db
 /data/**/*.pdf
 /data/uploads/**
 !/data/uploads/.gitkeep
+
+# Local environment files (contain real credentials, never commit)
+.env
+.env.*
+!.env.example

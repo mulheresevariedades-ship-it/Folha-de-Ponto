@@ -14,6 +14,27 @@ pnpm --filter @workspace\ponto-digital run dev
 Abra `http://localhost:3000/`. Os dados são sintéticos, ficam apenas em memória e
 nenhum e-mail real é enviado.
 
+## Banco de dados (API real)
+
+A API real (`artifacts/api-server/src/index.ts`) lê `DATABASE_URL` do ambiente —
+não carrega `.env` automaticamente. Prepare uma vez na raiz do repositório:
+
+```powershell
+Copy-Item .env.example .env   # cole a connection string do Neon (o .env não é versionado)
+Get-Content .env | Where-Object { $_ -match '^[A-Z_]+=' } | ForEach-Object {
+  if ($_ -match '^([A-Z_]+)=(.*)$') { Set-Item "env:$($matches[1])" $matches[2] }
+}
+pnpm --filter @workspace/db run push    # provisiona as tabelas no Neon
+```
+
+Em produção (Vercel), defina `DATABASE_URL` em Settings → Environment Variables;
+o deploy não usa `.env`.
+
+> **Porta 5432 bloqueada?** Redes corporativas costumam bloquear a porta 5432 do
+> PostgreSQL, o que impede o `push` e a API real na máquina local — nessas redes
+> use o modo demo acima ou faça o deploy na Vercel, onde a porta funciona. Se o
+> Neon estiver com IP Allow restrito, libere os IPs da Vercel (ou `0.0.0.0/0`).
+
 ## Modo portátil (armazenamento de arquivos)
 
 Os PDFs arquivados usam a variável `PONTO_DATA_DIR`:
