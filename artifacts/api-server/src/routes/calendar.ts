@@ -1,11 +1,11 @@
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import path from "node:path";
 import * as XLSX from "xlsx";
 import { CreateCalendarDateBody, UpdateCalendarDateBody } from "@workspace/api-zod";
 import { calendarEvents, db } from "@workspace/db";
 import { recordAudit } from "../lib/audit";
+import { assertSpreadsheetUpload } from "../lib/file-validation";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -242,11 +242,7 @@ router.delete("/calendar/:id", async (req, res, next): Promise<void> => {
 
 router.post("/calendar/import/preview", upload.single("file"), async (req, res): Promise<void> => {
 	try {
-		const file = req.file;
-		if (!file || ![".xlsx", ".xls"].includes(path.extname(file.originalname).toLowerCase())) {
-			res.status(400).json({ message: "Selecione um arquivo .xlsx ou .xls." });
-			return;
-		}
+		const file = assertSpreadsheetUpload(req.file);
 		res.json(await buildPreview(file.buffer));
 	} catch (error) {
 		res.status(422).json({ message: error instanceof Error ? error.message : "Não foi possível validar o calendário." });
@@ -255,11 +251,7 @@ router.post("/calendar/import/preview", upload.single("file"), async (req, res):
 
 router.post("/calendar/import", upload.single("file"), async (req, res, next): Promise<void> => {
 	try {
-		const file = req.file;
-		if (!file || ![".xlsx", ".xls"].includes(path.extname(file.originalname).toLowerCase())) {
-			res.status(400).json({ message: "Selecione um arquivo .xlsx ou .xls." });
-			return;
-		}
+		const file = assertSpreadsheetUpload(req.file);
 		const { rows, skipped: invalidRows } = parseCalendarSheet(file.buffer);
 		const existing = await db.select().from(calendarEvents);
 		const existingByDate = new Map(existing.map((event) => [event.date, event]));

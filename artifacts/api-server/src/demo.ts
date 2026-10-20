@@ -98,8 +98,10 @@ let smtp = {
 	port: 587,
 	username: "",
 	senderEmail: "",
+	secure: false,
 	passwordSet: false,
 	demoOnly: true,
+	source: "demo",
 };
 let lockOwner: string | null = null;
 let lockExpiresAt: number | null = null;
@@ -181,23 +183,40 @@ app.patch("/api/timesheets/:id/review", (req, res) => {
 });
 app.get("/api/timesheets/:id/file", (_req, res) => res.status(404).json({ message: "Arquivo não disponível no modo visual." }));
 
+const demoPreviewEntry = {
+	sourceFilename: "exemplo-folha.pdf",
+	pageNumber: 1,
+	name: employees[0].name,
+	matricula: employees[0].matricula,
+	competency: "2026-10",
+	competencyDetected: true,
+	competencySource: "conteudo-pdf",
+	confidence: 96,
+	duplicate: false,
+	duplicateInUpload: false,
+	duplicateReason: null,
+	needsReview: false,
+};
+const demoFileResults = [{ sourceFilename: "exemplo-folha.pdf", pages: 1, status: "processado", message: null }];
 app.post("/api/batches/preview", (_req, res) => res.json({
-	entries: [{
-		sourceFilename: "exemplo-folha.pdf",
-		pageNumber: 1,
-		name: employees[0].name,
-		matricula: employees[0].matricula,
-		competency: "2026-10",
-		confidence: 96,
-		duplicate: false,
-		duplicateInUpload: false,
-		needsReview: false,
-	}],
+	entries: [demoPreviewEntry],
 	newCount: 1,
 	duplicateCount: 0,
 	reviewCount: 0,
+	unidentifiedCount: 0,
+	errors: [],
+	fileResults: demoFileResults,
 }));
-app.post("/api/batches", (_req, res) => res.status(201).json({ created: 1, updated: 0, skipped: 0, entries: [] }));
+app.post("/api/batches", (_req, res) => res.status(201).json({
+	created: 1,
+	updated: 0,
+	skipped: 0,
+	entries: [demoPreviewEntry],
+	errors: [],
+	skippedDetails: [],
+	duplicatesInBatch: 0,
+	fileResults: demoFileResults,
+}));
 
 app.get("/api/employees", (req, res) => {
 	const query = String(req.query.q ?? "").toLocaleLowerCase();
@@ -235,7 +254,23 @@ app.delete("/api/calendar/:id", (_req, res) => res.status(204).end());
 app.post("/api/calendar/import/preview", (_req, res) => res.json({ newCount: 0, updatedCount: 0, skippedCount: 0, rows: [] }));
 app.post("/api/calendar/import", (_req, res) => res.json({ imported: 0, updated: 0, skipped: 0 }));
 
-app.get("/api/dispatches", (_req, res) => res.json(dispatches));
+app.get("/api/dispatches", (req, res) => {
+	const query = String(req.query.q ?? "").toLocaleLowerCase();
+	const status = String(req.query.status ?? "");
+	const from = String(req.query.from ?? "");
+	const to = String(req.query.to ?? "");
+	res.json(
+		dispatches.filter((row) => {
+			const record = row as Record<string, unknown>;
+			if (status && row.status !== status) return false;
+			if (query && !`${row.employee_name} ${row.employee_matricula} ${row.employee_email}`.toLocaleLowerCase().includes(query)) return false;
+			const reference = String(record.sent_at ?? record.created_at ?? "");
+			if (from && (!reference || reference.slice(0, 10) < from)) return false;
+			if (to && (!reference || reference.slice(0, 10) > to)) return false;
+			return true;
+		}),
+	);
+});
 app.patch("/api/dispatches/:id/send", (_req, res) => res.json({ ...dispatches[0], status: "enviado", sent_at: new Date().toISOString() }));
 app.patch("/api/dispatches/:id/resend", (_req, res) => res.json({ ...dispatches[0], status: "enviado", sent_at: new Date().toISOString() }));
 app.post("/api/dispatches/send-batch", (_req, res) => res.json({ processed: dispatches.length, results: dispatches.map((item) => ({ id: item.id, status: "enviado", message: "Simulado com sucesso." })) }));

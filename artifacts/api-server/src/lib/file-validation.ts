@@ -23,18 +23,20 @@ export function hasSpreadsheetExtension(filename: string): boolean {
 	return spreadsheetExtensions.includes(path.extname(filename).toLowerCase() as (typeof spreadsheetExtensions)[number]);
 }
 
-export function assertSpreadsheetUpload(file: { originalname: string; buffer: Buffer } | undefined): SpreadsheetKind {
+export function assertSpreadsheetUpload(file: { originalname: string; buffer: Buffer } | undefined): {
+	originalname: string;
+	buffer: Buffer;
+} {
 	if (!file) {
 		throw new Error("Selecione uma planilha .xlsx ou .xls.");
 	}
 	if (!hasSpreadsheetExtension(file.originalname)) {
 		throw new Error("Formato não aceito. Envie apenas planilhas .xlsx ou .xls. CSV, PDF e TXT não são permitidos.");
 	}
-	const kind = spreadsheetKind(file.buffer);
-	if (!kind) {
+	if (!spreadsheetKind(file.buffer)) {
 		throw new Error(
 			"O conteúdo do arquivo não corresponde a uma planilha Excel válida. Reexporte o arquivo como .xlsx ou .xls.",
 		);
 	}
-	return kind;
+	return file;
 }

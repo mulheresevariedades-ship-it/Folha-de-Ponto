@@ -1,12 +1,12 @@
 import { and, eq, ilike, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import path from "node:path";
 import * as XLSX from "xlsx";
 import { CreateEmployeeBody, UpdateEmployeeBody } from "@workspace/api-zod";
 import { db, employees } from "@workspace/db";
 import { recordAudit, safeString } from "../lib/audit";
 import { cpfHash, maskCpf, normalizeCpf, encryptSecret } from "../lib/demo-crypto";
+import { assertSpreadsheetUpload } from "../lib/file-validation";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -291,11 +291,7 @@ router.delete("/employees/:id", async (req, res, next): Promise<void> => {
 
 router.post("/employees/import/preview", upload.single("file"), async (req, res, next): Promise<void> => {
 	try {
-		const file = req.file;
-		if (!file || ![".xlsx", ".xls"].includes(path.extname(file.originalname).toLowerCase())) {
-			res.status(400).json({ message: "Selecione um arquivo .xlsx ou .xls." });
-			return;
-		}
+		const file = assertSpreadsheetUpload(req.file);
 		res.json(await buildImportPreview(file.buffer));
 	} catch (error) {
 		res.status(422).json({ message: error instanceof Error ? error.message : "Não foi possível validar a planilha." });
@@ -304,11 +300,7 @@ router.post("/employees/import/preview", upload.single("file"), async (req, res,
 
 router.post("/employees/import", upload.single("file"), async (req, res, next): Promise<void> => {
 	try {
-		const file = req.file;
-		if (!file || ![".xlsx", ".xls"].includes(path.extname(file.originalname).toLowerCase())) {
-			res.status(400).json({ message: "Selecione um arquivo .xlsx ou .xls." });
-			return;
-		}
+		const file = assertSpreadsheetUpload(req.file);
 		const { rows, skipped: invalidRows } = parseSpreadsheet(file.buffer);
 		const existing = await db.select().from(employees);
 		const existingByMatricula = new Map(existing.map((employee) => [employee.matricula, employee]));
