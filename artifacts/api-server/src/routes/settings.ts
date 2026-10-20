@@ -3,27 +3,28 @@ import { Router, type IRouter } from "express";
 import { UpdateSmtpSettingsBody } from "@workspace/api-zod";
 import { db, smtpSettings } from "@workspace/db";
 import { recordAudit } from "../lib/audit";
-import { decryptSecret, encryptSecret } from "../lib/demo-crypto";
+import { encryptSecret } from "../lib/demo-crypto";
+import { resolveSmtpConfig, type EffectiveSmtpConfig } from "../lib/smtp-config";
 import nodemailer from "nodemailer";
 
 const router: IRouter = Router();
 
-function safeSettings(row?: typeof smtpSettings.$inferSelect) {
+function publicSettings(config: EffectiveSmtpConfig) {
 	return {
-		host: row?.host ?? "",
-		port: row?.port ?? 587,
-		username: row?.username ?? "",
-		senderEmail: row?.senderEmail ?? "",
-		secure: row?.secure ?? false,
-		passwordSet: Boolean(row?.passwordEncrypted),
+		host: config.host,
+		port: config.port,
+		username: config.username,
+		senderEmail: config.senderEmail,
+		secure: config.secure,
+		passwordSet: config.passwordSet,
 		demoOnly: false,
+		source: config.source,
 	};
 }
 
 router.get("/settings/smtp", async (_req, res, next): Promise<void> => {
 	try {
-		const [row] = await db.select().from(smtpSettings).where(eq(smtpSettings.id, 1)).limit(1);
-		res.json(safeSettings(row));
+		res.json(publicSettings(await resolveSmtpConfig()));
 	} catch (error) {
 		next(error);
 	}
@@ -75,7 +76,7 @@ router.put("/settings/smtp", async (req, res, next): Promise<void> => {
 			host: updated.host,
 			senderEmail: updated.senderEmail,
 		});
-		res.json(safeSettings(updated));
+		res.json(publicSettings(await resolveSmtpConfig()));
 	} catch (error) {
 		next(error);
 	}
@@ -83,23 +84,34 @@ router.put("/settings/smtp", async (req, res, next): Promise<void> => {
 
 router.post("/settings/smtp/test", async (_req, res, next): Promise<void> => {
 	try {
-		const [row] = await db.select().from(smtpSettings).where(eq(smtpSettings.id, 1)).limit(1);
-		const valid = Boolean(row?.host && row?.port && row?.senderEmail && row?.passwordEncrypted);
-		if (!valid) {
-			res.json({ valid: false, message: "Preencha host, porta, remetente e credencial SMTP.", demoOnly: false });
+		const config = await resolveSmtpConfig();
+		if (!config.configured) {
+			const missing = [
+				!config.host ? "servidor" : "",
+				!config.senderEmail ? "remetente" : "",
+				config.username && !config.password ? "credencial" : "",
+			].filter(Boolean);
+			res.json({
+				valid: false,
+				message: `Preencha a configuração SMTP${missing.length ? ` (${missing.join(", ")})` : ""} ou defina SMTP_HOST/SMTP_FROM/SMTP_PASSWORD.`,
+				demoOnly: false,
+			});
 			return;
 		}
-		const password = decryptSecret(row.passwordEncrypted);
 		const transporter = nodemailer.createTransport({
-			host: row.host,
-			port: row.port,
-			secure: row.secure,
-			auth: row.username && password ? { user: row.username, pass: password } : undefined,
+			host: config.host,
+			port: config.port,
+			secure: config.secure,
+			auth: config.username && config.password ? { user: config.username, pass: config.password } : undefined,
 			connectionTimeout: 10_000,
 		});
 		await transporter.verify();
 		const message = "Conexão SMTP validada com sucesso.";
-		await recordAudit("configuracao_smtp_validada_localmente", "settings", "smtp", { valid });
+		await recordAudit("configuracao_smtp_validada", "settings", "smtp", {
+			valid: true,
+			source: config.source,
+			host: config.host,
+		});
 		res.json({ valid: true, message, demoOnly: false });
 	} catch (error) {
 		next(error);
