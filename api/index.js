@@ -1,20 +1,15 @@
-// CommonJS entry: Vercel does not transform it (no ESM->CJS compile),
-// and any module-load failure is surfaced in the response instead of
-// the generic FUNCTION_INVOCATION_FAILED.
-let app;
-try {
-	const mod = require("../artifacts/api-server/dist/app.mjs");
-	app = mod && mod.default ? mod.default : mod;
-} catch (err) {
-	app = function (_req, res) {
-		res.statusCode = 500;
-		res.setHeader("Content-Type", "text/plain; charset=utf-8");
-		res.end(
-			"BOOT_ERROR node=" +
-				process.version +
-				" " +
-				((err && (err.stack || err.message)) || String(err)),
-		);
-	};
-}
-module.exports = app;
+// Vercel function entry. The repo is CommonJS, but the built server is ESM
+// (dist/app.mjs), so the only supported bridge is a dynamic import() — a static
+// `import` gets compiled to require() (ERR_REQUIRE_ESM) and naming this file
+// .mjs makes Vercel's own wrapper reference `module` in ESM scope. The import
+// promise is cached per function instance to avoid re-loading on every request.
+let appPromise;
+
+module.exports = (req, res) => {
+  if (!appPromise) {
+    appPromise = import("../artifacts/api-server/dist/app.mjs").then(
+      (mod) => mod.default,
+    );
+  }
+  return appPromise.then((app) => app(req, res));
+};
