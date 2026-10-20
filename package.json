@@ -14,7 +14,8 @@
     "node": "24.x"
   },
   "dependencies": {
-    "@replit/connectors-sdk": "^0.4.3"
+    "@replit/connectors-sdk": "^0.4.3",
+    "@workspace/api-server": "workspace:*"
   },
   "devDependencies": {
     "prettier": "^3.9.6",
