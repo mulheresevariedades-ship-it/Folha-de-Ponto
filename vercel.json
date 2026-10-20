@@ -10,11 +10,6 @@
       "destination": "/api/index.ts"
     }
   ],
-  "functions": {
-    "api/index.ts": {
-      "runtime": "nodejs24.x"
-    }
-  },
   "build": {
     "env": {
       "PORT": "3000",
