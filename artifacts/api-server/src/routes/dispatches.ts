@@ -23,6 +23,10 @@ async function joinedDispatch(id: number) {
 		})
 		.from(dispatches)
 		.innerJoin(employees, eq(dispatches.employeeId, employees.id))
+		// A folha é lida junto porque o despacho precisa do arquivo anexado e da
+		// competência. Sem este join a consulta falha ("table timesheets is not
+		// part of the query") e todo envio termina em erro 500.
+		.innerJoin(timesheets, eq(dispatches.timesheetId, timesheets.id))
 		.where(eq(dispatches.id, id))
 		.limit(1);
 	return row;
@@ -152,9 +156,14 @@ router.get("/dispatches", async (req, res, next): Promise<void> => {
 				employeeMatricula: employees.matricula,
 				employeeEmail: employees.email,
 				employeeCpfLastDigits: employees.cpfLastDigits,
+				timesheetPath: timesheets.originalFilePath,
+				timesheetCompetency: timesheets.competency,
 			})
 			.from(dispatches)
 			.innerJoin(employees, eq(dispatches.employeeId, employees.id))
+			// Mesma folha do envio: sem ela o histórico nunca mostra o nome do
+			// arquivo anexado nem a competência.
+			.innerJoin(timesheets, eq(dispatches.timesheetId, timesheets.id))
 			.where(filters.length ? and(...filters) : undefined)
 			.orderBy(desc(dispatches.createdAt))
 			.limit(500);
