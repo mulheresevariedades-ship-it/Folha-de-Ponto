@@ -35,7 +35,7 @@ o deploy não usa `.env`.
 > use o modo demo acima ou faça o deploy na Vercel, onde a porta funciona. Se o
 > Neon estiver com IP Allow restrito, libere os IPs da Vercel (ou `0.0.0.0/0`).
 
-## Modo portátil (armazenamento de arquivos)
+## Pasta de dados (arquivos arquivados)
 
 Os PDFs arquivados usam a variável `PONTO_DATA_DIR`:
 
@@ -137,6 +137,8 @@ commits.
   explícita do operador (`confirmFallback: true`).
 - Planilhas `.xlsx`/`.xls` são validadas pela assinatura real do arquivo (ZIP/OLE2),
   não apenas pela extensão.
+- PDFs são validados pelo conteúdo (`%PDF-`), também sem confiar na extensão:
+  um arquivo renomeado é recusado com `422`.
 
 ## SMTP (nunca no código)
 
