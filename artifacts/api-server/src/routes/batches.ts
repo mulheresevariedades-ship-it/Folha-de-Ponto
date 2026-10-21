@@ -14,7 +14,6 @@ import { recordAudit, normalizeSearch } from "../lib/audit";
 import { archiveStore, toArchiveKey, type ArchiveStore } from "../lib/archive-store";
 import {
 	competencyFromContent,
-	isPdfBuffer,
 	isValidCompetency,
 	matriculaFromContent,
 	monthFolderName,
@@ -22,6 +21,7 @@ import {
 	officialTimesheetFileName,
 	oldTimesheetFileName,
 } from "../lib/timesheet-files";
+import { assertPdfUpload } from "../lib/file-validation";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -207,8 +207,10 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 	const work: Array<{ file: UploadedFile; document: PDFDocument; hash: string }> = [];
 	let totalPages = 0;
 	for (const file of files) {
-		if (path.extname(file.originalname).toLocaleLowerCase("pt-BR") !== ".pdf" || !isPdfBuffer(file.buffer)) {
-			const message = "Somente arquivos PDF válidos são aceitos (o conteúdo não é um PDF).";
+		try {
+			assertPdfUpload(file);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Arquivo inválido.";
 			errors.push({ sourceFilename: file.originalname, message });
 			fileResults.push({ sourceFilename: file.originalname, pages: 0, status: "erro", message });
 			continue;

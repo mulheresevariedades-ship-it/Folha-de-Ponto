@@ -16,6 +16,13 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 
 /**
+ * `NODE_ENV` é lido pelo logger para escolher entre a saída formatada
+ * (desenvolvimento) e a simples (produção). O operador não configura nada
+ * no modo portátil, então o padrão é o de desenvolvimento.
+ */
+process.env.NODE_ENV ??= "development";
+
+/**
  * Raiz do pacote *empacotado* (`dist-portable/server`), onde `portable.mjs`,
  * `front/` e `migrations/` ficam lado a lado. Quando não é um pacote (execução
  * direta do repositório), esses diretórios vivem em outro lugar.

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	competencyFromContent,
-	isPdfBuffer,
 	isValidCompetency,
 	monthFolderName,
 	nameFromContent,
@@ -12,6 +11,7 @@ import {
 	sanitizeFileStem,
 	stripAccents,
 } from "./timesheet-files";
+import { isPdfBuffer } from "./file-validation";
 
 describe("sanitizeFileStem", () => {
 	it("remove acentos e caracteres especiais", () => {

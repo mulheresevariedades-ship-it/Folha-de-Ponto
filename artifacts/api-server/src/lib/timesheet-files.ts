@@ -107,10 +107,6 @@ export function oldTimesheetFileName(archivePath: string, date = new Date()): st
 	return `${parsed.name}_OLD_${timestampForFileName(date)}${parsed.ext || ".pdf"}`;
 }
 
-export function isPdfBuffer(buffer: Buffer): boolean {
-	return buffer.length >= 5 && buffer.subarray(0, 5).toString("latin1") === "%PDF-";
-}
-
 /**
  * Finds the reference month inside the page text. Labels and month names take
  * precedence; a bare MM/YYYY is only accepted when it is not part of a full

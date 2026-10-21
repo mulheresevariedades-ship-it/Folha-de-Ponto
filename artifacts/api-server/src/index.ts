@@ -1,6 +1,16 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 
+/**
+ * `NODE_ENV` é lido pelo logger para escolher entre a saída formatada
+ * (desenvolvimento) e a simples (produção).
+ *
+ * O valor é definido aqui, e não no script `dev`, porque `export VAR=valor` é
+ * sintaxe POSIX e quebra no `cmd.exe` do Windows. O padrão do Node é
+ * "desenvolvimento" — só a produção define `NODE_ENV=production`.
+ */
+process.env.NODE_ENV ??= "development";
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {

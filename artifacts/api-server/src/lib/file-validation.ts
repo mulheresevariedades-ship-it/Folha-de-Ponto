@@ -50,3 +50,36 @@ export function assertSpreadsheetUpload(file: { originalname: string; buffer: Bu
 	}
 	return file;
 }
+
+/**
+ * Assinatura de um PDF: o cabeçalho `%PDF-`.
+ *
+ * A extensão `.pdf` não é confiável — um arquivo renomeado passa no teste de
+ * extensão e quebra na leitura. O mesmo cuidado já vale para planilhas.
+ */
+export function isPdfBuffer(buffer: Buffer): boolean {
+	return buffer.length >= 5 && buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+}
+
+/**
+ * Valida um PDF enviado: a extensão precisa ser `.pdf` e o conteúdo precisa
+ * ter a assinatura de um PDF de verdade.
+ *
+ * @throws Error com a mensagem adequada ao usuário quando o arquivo não é um
+ * PDF válido.
+ */
+export function assertPdfUpload(file: { originalname: string; buffer: Buffer } | undefined): {
+	originalname: string;
+	buffer: Buffer;
+} {
+	if (!file) {
+		throw new Error("Envie pelo menos um PDF.");
+	}
+	if (path.extname(file.originalname).toLowerCase() !== ".pdf") {
+		throw new Error("Formato não aceito. Envie apenas arquivos .pdf.");
+	}
+	if (!isPdfBuffer(file.buffer)) {
+		throw new Error("O conteúdo do arquivo não corresponde a um PDF válido.");
+	}
+	return file;
+}

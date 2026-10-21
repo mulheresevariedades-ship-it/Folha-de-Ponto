@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { assertSpreadsheetUpload, hasSpreadsheetExtension, parseWorkloadHours, spreadsheetKind } from "./file-validation";
+import {
+	assertPdfUpload,
+	assertSpreadsheetUpload,
+	hasSpreadsheetExtension,
+	parseWorkloadHours,
+	spreadsheetKind,
+} from "./file-validation";
 
 // Assinatura de arquivo ZIP (.xlsx moderno) e de OLE2 (.xls legado).
 const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -58,6 +64,31 @@ describe("assertSpreadsheetUpload", () => {
 	it("devolve o arquivo validado para uso posterior na rota", () => {
 		const upload = { originalname: "base.xlsx", buffer: Buffer.concat([ZIP_SIGNATURE, Buffer.from("rest")]) };
 		assert.equal(assertSpreadsheetUpload(upload), upload);
+	});
+});
+
+describe("assertPdfUpload", () => {
+	it("rejeita envio sem arquivo", () => {
+		assert.throws(() => assertPdfUpload(undefined), /Envie pelo menos um PDF/);
+	});
+
+	it("rejeita extensão que não é .pdf mesmo com conteúdo válido", () => {
+		assert.throws(
+			() => assertPdfUpload({ originalname: "folha.png", buffer: Buffer.from("%PDF-1.7 resto") }),
+			/Formato não aceito/,
+		);
+	});
+
+	it("rejeita arquivo com extensão .pdf mas conteúdo de outro tipo", () => {
+		assert.throws(
+			() => assertPdfUpload({ originalname: "falso.pdf", buffer: Buffer.from("nao sou pdf") }),
+			/não corresponde a um PDF válido/,
+		);
+	});
+
+	it("devolve o arquivo validado para uso posterior na rota", () => {
+		const upload = { originalname: "folha.pdf", buffer: Buffer.from("%PDF-1.7 resto") };
+		assert.equal(assertPdfUpload(upload), upload);
 	});
 });
 

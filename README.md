@@ -40,15 +40,41 @@ o deploy não usa `.env`.
 Os PDFs arquivados usam a variável `PONTO_DATA_DIR`:
 
 - Caminho absoluto: é usado exatamente como informado.
-- Caminho relativo (ex.: `ponto-data`): é resolvido contra a **raiz do workspace**,
+- Caminho relativo (ex.: `arquivo`): é resolvido contra a **raiz do workspace**,
   não contra o diretório de onde o servidor foi iniciado — assim o app pode rodar de
   qualquer pasta sem perder os arquivos.
-- Se não definida, usa `ponto-data` na raiz do workspace.
+- Se não definida, usa `data/` na raiz do workspace.
 
 ```powershell
 $env:PONTO_DATA_DIR="D:\archive\folhas"   # opcional
 pnpm --filter @workspace/api-server run demo
 ```
+
+## Rodar sem instalar PostgreSQL (modo portátil)
+
+O sistema pode ser copiado para qualquer computador e iniciado sem instalar
+nenhum banco: um PostgreSQL embutido (PGlite) grava os dados em arquivo, na
+pasta `data/`.
+
+```powershell
+pnpm --filter @workspace/api-server run build
+node scripts\portable\package.mjs --runtime "C:\Program Files\nodejs"
+```
+
+O comando gera a pasta `dist-portable/` com a API, a interface, o banco
+embutido e o runtime do Node. Basta dar duplo clique em `Iniciar-Ponto.bat`: o
+sistema sobe em uma única porta e as demais estações da rede abrem apenas o
+navegador no endereço mostrado.
+
+- A pasta de dados (`data/`) guarda o banco, os arquivos e a chave local de
+  cifragem — para fazer backup, copie essa pasta com o sistema encerrado.
+- **Uma única máquina executa a API.** O banco embutido não trava entre
+  processos: duas estações gravando na mesma pasta causam perda de dados. O
+  sistema recusa a segunda abertura com uma mensagem clara e, se a execução
+  anterior tiver sido encerrada à força, recupera o acesso sozinho.
+- O modo portátil usa um `SESSION_SECRET` próprio, guardado em
+  `data/SESSION_SECRET.txt`. Não apague esse arquivo: os dados cifrados
+  dependem dele.
 
 ### Executando de uma pasta de rede compartilhada
 
@@ -63,6 +89,9 @@ em cada computador:
    automaticamente).
 4. Inicie a API: `pnpm --filter @workspace/api-server run dev`; em outra janela,
    o frontend: `pnpm --filter @workspace/ponto-digital run dev`.
+
+Para usar o banco embutido em vez do Postgres, inicie pelo inicializador do
+modo portátil — ele já resolve a pasta de dados e dispensa o `DATABASE_URL`.
 
 O lock simples de operações vale também no modo demo: toda gravação exige o
 lease de 30 s da sessão (liberado automaticamente ao abandonar; consultas não
