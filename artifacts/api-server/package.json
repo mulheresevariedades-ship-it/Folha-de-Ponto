@@ -8,7 +8,7 @@
     "demo": "tsx src/demo.ts",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "test": "tsx --test src/lib/timesheet-files.test.ts src/lib/file-validation.test.ts src/lib/archive-store.test.ts",
+    "test": "tsx --test src/lib/timesheet-files.test.ts src/lib/file-validation.test.ts src/lib/archive-store.test.ts src/lib/pdf-text.test.ts src/lib/db-errors.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

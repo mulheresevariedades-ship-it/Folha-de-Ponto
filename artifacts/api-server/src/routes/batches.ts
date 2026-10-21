@@ -22,6 +22,7 @@ import {
 	oldTimesheetFileName,
 } from "../lib/timesheet-files";
 import { assertPdfUpload } from "../lib/file-validation";
+import { extractPdfPageTexts, hasUsableText } from "../lib/pdf-text";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -139,7 +140,18 @@ async function recognizePage(imagePath: string) {
 	return activeOcrWorker.recognize(imagePath);
 }
 
-async function extractPageText(pdfPath: string, pageNumber: number, tempDir: string) {
+/**
+ * Lê o texto de uma página do PDF.
+ *
+ * A ordem é deliberada:
+ *
+ * 1. `pdftotext` (poppler), quando está instalado no computador do operador:
+ *    preserva o layout e é a melhor leitura disponível;
+ * 2. a leitura interna da camada de texto, feita em JavaScript puro, que
+ *    funciona na Vercel e no modo portátil (sem binários de sistema);
+ * 3. o OCR, para PDF digitalizado (imagem), que também depende do poppler.
+ */
+async function extractPageText(pdfPath: string, pageNumber: number, tempDir: string, embeddedText: string) {
 	try {
 		const result = await execFile("pdftotext", ["-f", String(pageNumber), "-l", String(pageNumber), "-layout", pdfPath, "-"], {
 			maxBuffer: 2 * 1024 * 1024,
@@ -149,6 +161,9 @@ async function extractPageText(pdfPath: string, pageNumber: number, tempDir: str
 		}
 	} catch {
 		// A scanned page can still be processed with OCR below.
+	}
+	if (hasUsableText(embeddedText)) {
+		return { text: embeddedText, source: "conteudo-pdf" as const, ocrConfidence: 100, ocrUnavailable: false };
 	}
 	try {
 		const imagePrefix = path.join(tempDir, `page-${randomUUID()}`);
@@ -248,6 +263,14 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 			const source = work[fileIndex];
 			const sourcePath = path.join(tempDir, `source-${fileIndex}.pdf`);
 			await fs.writeFile(sourcePath, source.file.buffer);
+			// Leitura da camada de texto do arquivo, feita uma vez por PDF.
+			let embeddedTexts: string[] = [];
+			try {
+				embeddedTexts = (await extractPdfPageTexts(source.file.buffer)).map((page) => page.text);
+			} catch {
+				// Sem camada de texto legível: o OCR (quando existe) assume.
+				embeddedTexts = [];
+			}
 			let pages = 0;
 			let fileMessage: string | null = null;
 			for (let pageNumber = 1; pageNumber <= source.document.getPageCount(); pageNumber += 1) {
@@ -256,7 +279,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 					const [copied] = await target.copyPages(source.document, [pageNumber - 1]);
 					target.addPage(copied);
 					const pageBuffer = Buffer.from(await target.save());
-					const extracted = await extractPageText(sourcePath, pageNumber, tempDir);
+					const extracted = await extractPageText(sourcePath, pageNumber, tempDir, embeddedTexts[pageNumber - 1] ?? "");
 					const text = extracted.text;
 					const detectedMatricula = matriculaFromContent(text);
 					const detectedName = nameFromContent(text);
