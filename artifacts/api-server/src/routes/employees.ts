@@ -7,6 +7,7 @@ import { db, employees } from "@workspace/db";
 import { recordAudit, safeString } from "../lib/audit";
 import { cpfHash, maskCpf, normalizeCpf, encryptSecret } from "../lib/demo-crypto";
 import { assertSpreadsheetUpload, parseWorkloadHours } from "../lib/file-validation";
+import { isUniqueViolation } from "../lib/db-errors";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -219,7 +220,7 @@ router.post("/employees", async (req, res, next): Promise<void> => {
 		req.log.info({ employeeId: created.id }, "Synthetic employee record created");
 		res.status(201).json(toApiEmployee(created));
 	} catch (error) {
-		if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+		if (isUniqueViolation(error)) {
 			res.status(409).json({ message: "Já existe um servidor com essa matrícula." });
 			return;
 		}
@@ -278,7 +279,7 @@ router.patch("/employees/:id", async (req, res, next): Promise<void> => {
 		});
 		res.json(toApiEmployee(updated));
 	} catch (error) {
-		if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+		if (isUniqueViolation(error)) {
 			res.status(409).json({ message: "Já existe um servidor com essa matrícula." });
 			return;
 		}

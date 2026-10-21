@@ -6,6 +6,7 @@ import { CreateCalendarDateBody, UpdateCalendarDateBody } from "@workspace/api-z
 import { calendarEvents, db } from "@workspace/db";
 import { recordAudit } from "../lib/audit";
 import { assertSpreadsheetUpload } from "../lib/file-validation";
+import { isUniqueViolation } from "../lib/db-errors";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -169,7 +170,7 @@ router.post("/calendar", async (req, res, next): Promise<void> => {
 		});
 		res.status(201).json({ id: created.id, date: created.date, description: created.description, type: created.type });
 	} catch (error) {
-		if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+		if (isUniqueViolation(error)) {
 			res.status(409).json({ message: "Já existe um evento cadastrado para essa data." });
 			return;
 		}
@@ -209,7 +210,7 @@ router.patch("/calendar/:id", async (req, res, next): Promise<void> => {
 		});
 		res.json({ id: updated.id, date: updated.date, description: updated.description, type: updated.type });
 	} catch (error) {
-		if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+		if (isUniqueViolation(error)) {
 			res.status(409).json({ message: "Já existe um evento cadastrado para essa data." });
 			return;
 		}
