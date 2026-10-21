@@ -1,5 +1,5 @@
 import { and, desc, eq, ilike, or } from "drizzle-orm";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import {
 	AlignmentType,
 	Document,
@@ -17,6 +17,7 @@ import { calendarEvents, db, dispatches, employees, timesheets } from "@workspac
 import { recordAudit, safeString } from "../lib/audit";
 import { archiveStore, toArchiveKey } from "../lib/archive-store";
 import { cpfHash, maskCpf, normalizeCpf } from "../lib/demo-crypto";
+import { isUniqueViolation } from "../lib/db-errors";
 
 const router: IRouter = Router();
 
@@ -104,6 +105,11 @@ router.get("/timesheets", async (req, res, next): Promise<void> => {
 		next(error);
 	}
 });
+
+// A rota literal precisa ser registrada ANTES de `/timesheets/:id`: o Express
+// resolve na ordem de registro e, do contrário, "generate" seria lido como um
+// identificador de folha e a geração do modelo DOCX responderia 404.
+router.get("/timesheets/generate", handleGenerateTimesheet);
 
 router.get("/timesheets/:id", async (req, res, next): Promise<void> => {
 	try {
@@ -214,7 +220,7 @@ router.patch("/timesheets/:id/review", async (req, res, next): Promise<void> => 
 		const row = await findTimesheet(updated.reference);
 		res.json(row ? toApiTimesheet(row) : toApiTimesheet({ sheet: updated, employeeName, employeeMatricula: matricula }));
 	} catch (error) {
-		if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+		if (isUniqueViolation(error)) {
 			res.status(409).json({ message: "Já existe uma folha arquivada para esta matrícula e competência." });
 			return;
 		}
@@ -248,7 +254,7 @@ router.get("/timesheets/:id/file", async (req, res, next): Promise<void> => {
 	}
 });
 
-router.get("/timesheets/generate", async (req, res, next): Promise<void> => {
+async function handleGenerateTimesheet(req: Request, res: Response, next: NextFunction): Promise<void> {
 	try {
 		const employeeId = Number(req.query.employeeId);
 		const competency = safeString(req.query.competency);
@@ -359,6 +365,6 @@ router.get("/timesheets/generate", async (req, res, next): Promise<void> => {
 	} catch (error) {
 		next(error);
 	}
-});
+}
 
 export default router;
