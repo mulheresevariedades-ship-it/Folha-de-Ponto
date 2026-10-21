@@ -10,7 +10,17 @@ import { assertSpreadsheetUpload, parseWorkloadHours } from "../lib/file-validat
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
-const requiredHeaders = ["nome", "matricula", "cpf", "email", "cargahoraria", "acumulacargossimnao"];
+// Coluna lógica + formas aceitas do cabeçalho após normalização (acentos,
+// espaços e símbolos removidos). Planilhas reais variam: "Acumula cargo
+// (Sim/Não)", "Acumula Cargos Sim/Não", "Nome Completo" etc.
+const requiredColumns = [
+	{ key: "nome", label: "Nome", aliases: ["nome", "nomecompleto", "nomedoservidor"] },
+	{ key: "matricula", label: "Matrícula", aliases: ["matricula", "matriculadosservidor"] },
+	{ key: "cpf", label: "CPF", aliases: ["cpf", "cpfdoservidor"] },
+	{ key: "email", label: "E-mail", aliases: ["email", "elettronico", "correioeletronico"] },
+	{ key: "cargahoraria", label: "Carga Horária", aliases: ["cargahoraria", "cargahorariah", "horassemanais", "carga"] },
+	{ key: "acumulacargossimnao", label: "Acumula cargo (Sim/Não)", aliases: ["acumulacargossimnao", "acumulacargosimnao", "acumulacargos", "acumulacargo", "acumulaoutrocargo"] },
+];
 
 function normalizeHeader(value: unknown): string {
 	return String(value ?? "")
@@ -54,8 +64,13 @@ function parseSpreadsheet(buffer: Buffer): { rows: ParsedEmployeeRow[]; skipped:
 	if (!firstSheet) throw new Error("A planilha não contém uma aba.");
 	const data = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, { header: 1, defval: "", raw: false });
 	const headers = (data[0] ?? []).map(normalizeHeader);
-	const positions = new Map(headers.map((header, index) => [header, index]));
-	const missing = requiredHeaders.filter((header) => !positions.has(header));
+	const positions = new Map<string, number>();
+	headers.forEach((header, index) => {
+		const column = requiredColumns.find((candidate) => candidate.aliases.includes(header));
+		// Primeira ocorrência vence, caso a planilha repita a coluna.
+		if (column && !positions.has(column.key)) positions.set(column.key, index);
+	});
+	const missing = requiredColumns.filter((column) => !positions.has(column.key)).map((column) => column.label);
 	if (missing.length) {
 		throw new Error(`Cabeçalhos inválidos. Estão faltando: ${missing.join(", ")}.`);
 	}
