@@ -140,6 +140,24 @@ commits.
 - PDFs são validados pelo conteúdo (`%PDF-`), também sem confiar na extensão:
   um arquivo renomeado é recusado com `422`.
 
+## Leitura do texto das folhas em PDF
+
+O reconhecimento da competência, do nome e da matrícula lê o texto do PDF em
+três etapas, nessa ordem:
+
+1. `pdftotext` (poppler), quando o binário está instalado no computador do
+   operador — é a leitura que preserva o layout da folha;
+2. a leitura da camada de texto feita em JavaScript puro
+   (`artifacts/api-server/src/lib/pdf-text.ts`), que decodifica a página,
+   as fontes simples e as fontes compostas com a tabela `/ToUnicode`;
+   funciona na Vercel e no modo portátil, sem nenhum programa externo;
+3. o OCR, para PDF digitalizado (imagem), que também depende do poppler.
+
+Assim, um PDF gerado por Word, Excel ou por um sistema de folha é lido na
+Vercel e no modo portátil sem instalar nada. Quando o PDF é uma imagem e não
+há OCR disponível, a página é arquivada com `ocrUnavailable: true` e fica
+marcada para revisão manual, sem inventar competência.
+
 ## SMTP (nunca no código)
 
 A senha SMTP nunca fica no repositório. A configuração é salva criptografada no
