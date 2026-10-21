@@ -83,8 +83,12 @@ router.put("/settings/smtp", async (req, res, next): Promise<void> => {
 });
 
 router.post("/settings/smtp/test", async (_req, res, next): Promise<void> => {
+	let testedHost = "";
+	let testedSource = "";
 	try {
 		const config = await resolveSmtpConfig();
+		testedHost = config.host;
+		testedSource = config.source;
 		if (!config.configured) {
 			const missing = [
 				!config.host ? "servidor" : "",
@@ -114,7 +118,18 @@ router.post("/settings/smtp/test", async (_req, res, next): Promise<void> => {
 		});
 		res.json({ valid: true, message, demoOnly: false });
 	} catch (error) {
-		next(error);
+		// Falha de conexão (host inexistente, porta fechada, credencial recusada)
+		// é um resultado da validação, não um erro do servidor: devolve 200 com
+		// `valid: false` e a mensagem real, em vez de um HTML de stack trace.
+		const reason = error instanceof Error ? error.message : "erro desconhecido";
+		const message = `Não foi possível conectar ao servidor SMTP: ${reason}`;
+		await recordAudit("configuracao_smtp_rejeitada", "settings", "smtp", {
+			valid: false,
+			source: testedSource,
+			host: testedHost,
+			reason,
+		});
+		res.json({ valid: false, message, demoOnly: false });
 	}
 });
 
