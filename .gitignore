@@ -53,6 +53,12 @@ Thumbs.db
 /data/uploads/**
 !/data/uploads/.gitkeep
 
+# Modo portátil: banco em arquivo, trava de estação e segredo local.
+/data/banco/
+/data/LOCK-PONTO.json
+/data/SESSION_SECRET.txt
+/dist-portable/
+
 # Local environment files (contain real credentials, never commit)
 .env
 .env.*

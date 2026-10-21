@@ -35,6 +35,9 @@ async function buildAll() {
       "sharp",
       "better-sqlite3",
       "sqlite3",
+      // O PGlite carrega os binários WASM por caminho de arquivo: embutir o
+      // bundle quebra a execução (procura `pglite.data` ao lado do mjs).
+      "@electric-sql/pglite",
       "canvas",
       "bcrypt",
       "argon2",
@@ -111,6 +114,43 @@ async function buildAll() {
       esbuildPluginPino({ transports: ["pino-pretty"] })
     ],
     // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
+    banner: {
+      js: `import { createRequire as __bannerCrReq } from 'node:module';
+import __bannerPath from 'node:path';
+import __bannerUrl from 'node:url';
+
+globalThis.require = __bannerCrReq(import.meta.url);
+globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
+globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
+    `,
+    },
+  });
+
+  /**
+   * Modo portátil — bundle autônomo.
+   *
+   * O pacote distribuível não pode depender de `node_modules` do projeto, então
+   * aqui tudo é embutido. Duas exceções:
+   *
+   * - PGlite: carrega os binários WASM por caminho de arquivo, então precisa
+   *   desses arquivos ao lado do executável (o empacotamento em
+   *   `scripts/portable/package.mjs` faz essa cópia).
+   * - tesseract.js: o OCR carrega o worker e o núcleo WASM de disco, então
+   *   precisa da pasta do pacote no destino.
+   */
+  await esbuild({
+    entryPoints: {
+      portable: path.resolve(artifactDir, "src/portable.ts"),
+    },
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    outdir: distDir,
+    outExtension: { ".js": ".mjs" },
+    logLevel: "info",
+    external: ["*.node", "@electric-sql/pglite", "tesseract.js", "tesseract.js-core"],
+    sourcemap: "linked",
+    plugins: [esbuildPluginPino({ transports: ["pino-pretty"] })],
     banner: {
       js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';
