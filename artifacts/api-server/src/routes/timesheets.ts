@@ -238,6 +238,10 @@ router.get("/timesheets/:id/file", async (req, res, next): Promise<void> => {
 			res.status(404).json({ message: "Arquivo não encontrado." });
 			return;
 		}
+		// Nome oficial (Nome_do_servidor-AAAA-MM.pdf) já é o basename da chave
+		// do store; sem o header o navegador salvaria o id interno no lugar.
+		const filename = (archiveKey.split(/[\\/]/).pop() ?? "folha-de-ponto.pdf").replace(/["\\]/g, "_");
+		res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 		res.type("application/pdf").send(file);
 	} catch (error) {
 		next(error);
