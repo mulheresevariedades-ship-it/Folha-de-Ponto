@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { assertSpreadsheetUpload, hasSpreadsheetExtension, spreadsheetKind } from "./file-validation";
+import { assertSpreadsheetUpload, hasSpreadsheetExtension, parseWorkloadHours, spreadsheetKind } from "./file-validation";
 
 // Assinatura de arquivo ZIP (.xlsx moderno) e de OLE2 (.xls legado).
 const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -58,5 +58,22 @@ describe("assertSpreadsheetUpload", () => {
 	it("devolve o arquivo validado para uso posterior na rota", () => {
 		const upload = { originalname: "base.xlsx", buffer: Buffer.concat([ZIP_SIGNATURE, Buffer.from("rest")]) };
 		assert.equal(assertSpreadsheetUpload(upload), upload);
+	});
+});
+
+describe("parseWorkloadHours", () => {
+	it("aceita números puros e texto com sufixo de hora, comum em planilhas de RH", () => {
+		assert.equal(parseWorkloadHours("40"), 40);
+		assert.equal(parseWorkloadHours("20h"), 20);
+		assert.equal(parseWorkloadHours("20 h"), 20);
+		assert.equal(parseWorkloadHours("40 HORAS"), 40);
+		assert.equal(parseWorkloadHours("36,5"), 36.5);
+		assert.equal(parseWorkloadHours(" 20h"), 20);
+	});
+
+	it("devolve NaN quando o texto não começa com número inequívoco", () => {
+		assert.ok(Number.isNaN(parseWorkloadHours("")));
+		assert.ok(Number.isNaN(parseWorkloadHours("carga não informada")));
+		assert.ok(Number.isNaN(parseWorkloadHours("h20")));
 	});
 });

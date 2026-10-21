@@ -6,7 +6,7 @@ import { CreateEmployeeBody, UpdateEmployeeBody } from "@workspace/api-zod";
 import { db, employees } from "@workspace/db";
 import { recordAudit, safeString } from "../lib/audit";
 import { cpfHash, maskCpf, normalizeCpf, encryptSecret } from "../lib/demo-crypto";
-import { assertSpreadsheetUpload } from "../lib/file-validation";
+import { assertSpreadsheetUpload, parseWorkloadHours } from "../lib/file-validation";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -70,7 +70,8 @@ function parseSpreadsheet(buffer: Buffer): { rows: ParsedEmployeeRow[]; skipped:
 		const matricula = value("matricula");
 		const cpf = normalizeCpf(value("cpf"));
 		const email = value("email");
-		const hoursValue = Number(value("cargahoraria").replace(",", "."));
+		// Planilhas reais trazem "20h"/"40 h"; o parser tolera o sufixo.
+		const hoursValue = parseWorkloadHours(value("cargahoraria"));
 		const accumulates = ["sim", "s", "true", "yes", "1"].includes(normalizeHeader(value("acumulacargossimnao")));
 
 		if (!name || !matricula || (cpf && cpf.length !== 11) || !Number.isFinite(hoursValue) || hoursValue < 1 || hoursValue > 100) {

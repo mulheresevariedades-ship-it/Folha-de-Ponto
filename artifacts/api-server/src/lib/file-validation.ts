@@ -23,6 +23,16 @@ export function hasSpreadsheetExtension(filename: string): boolean {
 	return spreadsheetExtensions.includes(path.extname(filename).toLowerCase() as (typeof spreadsheetExtensions)[number]);
 }
 
+/**
+ * Carga horária chega frequente como "20h", "20 h" ou "40 HORAS" em planilhas
+ * reais de RH. Extrai o número inicial em vez de rejeitar a linha inteira;
+ * devolve NaN quando não há número inequívoco no começo do texto.
+ */
+export function parseWorkloadHours(raw: string): number {
+	const match = raw.trim().match(/^\d+(?:[.,]\d+)?/);
+	return match ? Number(match[0].replace(",", ".")) : Number.NaN;
+}
+
 export function assertSpreadsheetUpload(file: { originalname: string; buffer: Buffer } | undefined): {
 	originalname: string;
 	buffer: Buffer;
