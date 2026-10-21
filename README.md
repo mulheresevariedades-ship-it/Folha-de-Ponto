@@ -143,7 +143,7 @@ commits.
 ## Leitura do texto das folhas em PDF
 
 O reconhecimento da competência, do nome e da matrícula lê o texto do PDF em
-três etapas, nessa ordem:
+quatro etapas, nessa ordem:
 
 1. `pdftotext` (poppler), quando o binário está instalado no computador do
    operador — é a leitura que preserva o layout da folha;
@@ -151,12 +151,44 @@ três etapas, nessa ordem:
    (`artifacts/api-server/src/lib/pdf-text.ts`), que decodifica a página,
    as fontes simples e as fontes compostas com a tabela `/ToUnicode`;
    funciona na Vercel e no modo portátil, sem nenhum programa externo;
-3. o OCR, para PDF digitalizado (imagem), que também depende do poppler.
+3. o OCR, para PDF digitalizado (imagem), feito pelo `tesseract.js` (WASM puro,
+   sem binários de sistema) sobre a imagem extraída do próprio arquivo
+   (`artifacts/api-server/src/lib/pdf-raster.ts`): o JPEG da página vai intacto
+   ao OCR e as imagens em bits crus são montadas em PNG. **Não depende do
+   poppler** — funciona na Vercel e no modo portátil;
+4. a conferência manual, que só acontece quando nenhuma das etapas acima
+   conseguiu ler a página.
+
+Se a página digitalizada não tiver uma imagem aproveitável (folha vetorial
+com fonte incorporada, por exemplo), o `pdftoppm` do poppler entra como
+segunda tentativa do OCR — quando ele estiver instalado.
 
 Assim, um PDF gerado por Word, Excel ou por um sistema de folha é lido na
-Vercel e no modo portátil sem instalar nada. Quando o PDF é uma imagem e não
-há OCR disponível, a página é arquivada com `ocrUnavailable: true` e fica
-marcada para revisão manual, sem inventar competência.
+Vercel e no modo portátil sem instalar nada, e um PDF digitalizado também é
+lido sem instalar nada.
+
+### O que a API devolve
+
+- `competencySource` com `conteudo-pdf` (texto), `ocr-conteudo-pdf` (página
+  digitalizada lida por OCR), `fallback` (competência de referência) ou
+  `nao-identificada`;
+- `ocrApplied: true` quando a página foi lida por OCR e `ocrUnavailable: true`
+  quando nenhuma estratégia de OCR funcionou — esse campo só aparece quando
+  o problema é real;
+- quando o OCR lê com **confiança baixa** (abaixo de 60), a competência não é
+  aceita: a página é marcada para revisão manual, com a nota
+  "Leitura por OCR com confiança baixa", em vez de arquivar um dado
+  provavelmente errado.
+
+### OCR sem internet (modo portátil)
+
+O `tesseract.js` baixa o modelo de idioma (português e inglês, cerca de 4 MB)
+do CDN do projeto. O empacotador portátil (`scripts/portable/package.mjs`)
+baixa esse modelo uma vez e o coloca em `server/tessdata/`; em tempo de
+execução a API usa o modelo local quando ele existe e, não havendo internet,
+o OCR continua funcionando. Para apontar outro caminho:
+`PONTO_TESSDATA_PATH`. Para trocar os idiomas: `PONTO_OCR_LANGUAGES`
+(por exemplo `por`).
 
 ## SMTP (nunca no código)
 
@@ -173,3 +205,9 @@ automatizados:
 ```powershell
 pnpm --filter @workspace/api-server run test
 ```
+
+A suíte também cobre a leitura de PDF digitalizado de ponta a ponta
+(`src/lib/ocr.test.ts`): o modelo de idioma do OCR é baixado da internet na
+primeira execução (cerca de 4 MB). Sem internet o teste é ignorado com aviso
+— o restante da suíte continua válido. Para desligá-lo de propósito:
+`PONTO_OCR_TEST=0`.

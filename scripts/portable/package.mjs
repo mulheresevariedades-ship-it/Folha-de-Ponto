@@ -23,6 +23,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fetchTessdata } from "./fetch-tessdata.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..");
@@ -73,13 +74,13 @@ function countFiles(dir) {
 	return total;
 }
 
-log("1/6 — compilando a interface");
+log("1/7 — compilando a interface");
 run("pnpm", ["--filter", "@workspace/ponto-digital", "run", "build"]);
 
-log("2/6 — compilando a API");
+log("2/7 — compilando a API");
 run("pnpm", ["--filter", "@workspace/api-server", "run", "build"]);
 
-log(`3/6 — preparando ${path.relative(repoRoot, outputDir)}`);
+log(`3/7 — preparando ${path.relative(repoRoot, outputDir)}`);
 rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(serverDir, { recursive: true });
 
@@ -88,7 +89,7 @@ if (!existsSync(path.join(apiDist, "portable.mjs"))) {
 	throw new Error("O bundle portátil não foi gerado. Verifique o build da API.");
 }
 
-log("4/6 — copiando servidor, interface e migrações");
+log("4/7 — copiando servidor, interface e migrações");
 // O bundle portátil importa os módulos `pino` empacotados ao lado, então copia
 // todo o `dist` em vez de apenas `portable.mjs`.
 copyDirectory(apiDist, path.join(serverDir));
@@ -168,16 +169,32 @@ for (const packageName of runtimePackages) {
 	log(`   copiado ${packageName} e suas dependências`);
 }
 
-log("5/6 — copiando o inicializador");
+log("5/7 — copiando o inicializador");
 copyFileSync(path.join(scriptDir, "Iniciar-Ponto.bat"), path.join(outputDir, "Iniciar-Ponto.bat"));
 
-log("6/6 — embutindo o runtime do Node");
+log("6/7 — embutindo o runtime do Node");
 const runtimeDir = resolveRuntimeDir();
 if (runtimeDir && existsSync(runtimeDir)) {
 	copyDirectory(runtimeDir, path.join(outputDir, "runtime"));
 	log(`   runtime embutido de ${runtimeDir}`);
 } else {
 	log("   runtime não informado — o pacote usará o Node instalado na estação");
+}
+
+log("7/7 — trazendo o modelo de idioma do OCR");
+const tessdataDir = path.join(serverDir, "tessdata");
+try {
+	const ready = await fetchTessdata({
+		target: tessdataDir,
+		cacheDir: path.join(repoRoot, "node_modules", ".cache", "tessdata"),
+	});
+	if (ready.length > 0) {
+		log(`   OCR funciona sem internet (${ready.length} modelo(s) em tessdata/)`);
+	} else {
+		log("   modelo indisponível — o OCR usará o download automático (precisa de internet)");
+	}
+} catch (error) {
+	log(`   não foi possível preparar o OCR offline: ${error instanceof Error ? error.message : String(error)}`);
 }
 
 const readme = `Folha de Ponto — modo portátil
@@ -208,6 +225,12 @@ Tudo é gravado na subpasta "data", ao lado do inicializador:
     data/SESSION_SECRET.txt  chave local (não apague, ou os dados cifrados se perdem)
 
 Para fazer backup, copie a pasta "data" inteira com o sistema encerrado.
+
+Leitura de folha digitalizada (OCR)
+------------------------------------
+O reconhecimento de PDF escaneado funciona sem internet: o modelo de idioma
+do OCR vem na subpasta "server/tessdata". Se essa pasta for removida, o
+sistema passa a baixar o modelo da internet no primeiro uso.
 
 Encerrar
 --------

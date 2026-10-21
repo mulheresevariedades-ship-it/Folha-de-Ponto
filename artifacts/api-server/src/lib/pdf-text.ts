@@ -73,7 +73,10 @@ function decodedStreamBytes(stream: PDFStream): Uint8Array {
 }
 
 /** Os fluxos de conteúdo de uma página, na ordem. */
-function pageContentStreams(context: PDFDocument["context"], page: ReturnType<PDFDocument["getPages"]>[number]): Uint8Array[] {
+export function pageContentStreams(
+	context: PDFDocument["context"],
+	page: ReturnType<PDFDocument["getPages"]>[number],
+): Uint8Array[] {
 	const contents = page.node.Contents();
 	const streams: Uint8Array[] = [];
 	const push = (object: PDFObject | undefined) => {
@@ -218,7 +221,7 @@ function pageFonts(
  * Tokenizador do fluxo de conteúdo
  * ------------------------------------------------------------------ */
 
-type Token =
+export type Token =
 	| { kind: "string"; bytes: Uint8Array }
 	| { kind: "name"; value: string }
 	| { kind: "number"; value: number }
@@ -278,7 +281,13 @@ function readLiteralString(source: Uint8Array, start: number): { bytes: Uint8Arr
 	return { bytes: Uint8Array.from(out), end: index };
 }
 
-function tokenize(source: Uint8Array): Token[] {
+/**
+ * Separa o fluxo de conteúdo em operandos e operadores.
+ *
+ * Exportado porque a extração da imagem da página (usada pelo OCR) precisa
+ * dos mesmos tokens para descobrir quais imagens são desenhadas e onde.
+ */
+export function tokenizeContentStream(source: Uint8Array): Token[] {
 	const tokens: Token[] = [];
 	let index = 0;
 	while (index < source.length) {
@@ -482,7 +491,7 @@ function pageText(context: PDFDocument["context"], page: ReturnType<PDFDocument[
 	const parts: string[] = [];
 	for (const stream of pageContentStreams(context, page)) {
 		try {
-			parts.push(textFromTokens(tokenize(stream), fonts));
+			parts.push(textFromTokens(tokenizeContentStream(stream), fonts));
 		} catch {
 			// Página ilegível: as demais páginas do arquivo continuam válidas.
 		}

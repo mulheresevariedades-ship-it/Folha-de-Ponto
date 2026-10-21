@@ -2,13 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import { createHash, randomUUID } from "node:crypto";
-import { execFile as execFileCallback } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { PDFDocument } from "pdf-lib";
-import { createWorker } from "tesseract.js";
 import { db, batches, employees, timesheets } from "@workspace/db";
 import { recordAudit, normalizeSearch } from "../lib/audit";
 import { archiveStore, toArchiveKey, type ArchiveStore } from "../lib/archive-store";
@@ -22,14 +19,15 @@ import {
 	oldTimesheetFileName,
 } from "../lib/timesheet-files";
 import { assertPdfUpload } from "../lib/file-validation";
-import { extractPdfPageTexts, hasUsableText } from "../lib/pdf-text";
+import { extractPdfPageTexts } from "../lib/pdf-text";
+import { readPageText, type PageTextResult } from "../lib/pdf-page-text";
+import { recognizeImage, terminateOcr } from "../lib/ocr";
 
 const router: IRouter = Router();
 const upload = multer({
 	storage: multer.memoryStorage(),
 	limits: { fileSize: 20 * 1024 * 1024, files: 10 },
 });
-const execFile = promisify(execFileCallback);
 const maxTotalBytes = 50 * 1024 * 1024;
 const maxPages = 100;
 const statusLabels: Record<string, string> = {
@@ -40,7 +38,7 @@ const statusLabels: Record<string, string> = {
 
 type UploadedFile = Express.Multer.File;
 type EmployeeRow = typeof employees.$inferSelect;
-type CompetencySource = "conteudo-pdf" | "ocr" | "fallback" | "nao-identificada";
+type CompetencySource = "conteudo-pdf" | "ocr-conteudo-pdf" | "fallback" | "nao-identificada";
 
 type AnalysisEntry = {
 	sourceFilename: string;
@@ -61,7 +59,9 @@ type AnalysisEntry = {
 	duplicateInUpload: boolean;
 	duplicateReason: string | null;
 	needsReview: boolean;
+	ocrApplied: boolean;
 	ocrUnavailable: boolean;
+	ocrLowConfidence: boolean;
 };
 type AnalysisError = { sourceFilename: string; pageNumber?: number; message: string };
 type FileResult = { sourceFilename: string; pages: number; status: "processado" | "erro"; message: string | null };
@@ -80,7 +80,6 @@ class FallbackRequiredError extends Error {
 	}
 }
 
-let activeOcrWorker: Awaited<ReturnType<typeof createWorker>> | null = null;
 let pdfQueue: Promise<void> = Promise.resolve();
 
 async function serializePdfWork<T>(work: () => Promise<T>): Promise<T> {
@@ -133,64 +132,27 @@ function officialArchiveKey(entry: AnalysisEntry): string {
 	return `${monthFolderName(entry.competency)}/${fileName}`;
 }
 
-async function recognizePage(imagePath: string) {
-	if (!activeOcrWorker) {
-		activeOcrWorker = await createWorker("por+eng");
-	}
-	return activeOcrWorker.recognize(imagePath);
-}
-
 /**
  * Lê o texto de uma página do PDF.
  *
- * A ordem é deliberada:
- *
- * 1. `pdftotext` (poppler), quando está instalado no computador do operador:
- *    preserva o layout e é a melhor leitura disponível;
- * 2. a leitura interna da camada de texto, feita em JavaScript puro, que
- *    funciona na Vercel e no modo portátil (sem binários de sistema);
- * 3. o OCR, para PDF digitalizado (imagem), que também depende do poppler.
+ * A ordem (e o porquê de cada etapa) está em `pdf-page-text.ts`:
+ * `pdftotext` → camada de texto lida em JavaScript puro → OCR da imagem da
+ * página (imagem extraída do próprio arquivo, sem `poppler`) → conferência
+ * manual.
  */
-async function extractPageText(pdfPath: string, pageNumber: number, tempDir: string, embeddedText: string) {
-	try {
-		const result = await execFile("pdftotext", ["-f", String(pageNumber), "-l", String(pageNumber), "-layout", pdfPath, "-"], {
-			maxBuffer: 2 * 1024 * 1024,
-		});
-		if (result.stdout.trim().length >= 24) {
-			return { text: result.stdout, source: "conteudo-pdf" as const, ocrConfidence: 100, ocrUnavailable: false };
-		}
-	} catch {
-		// A scanned page can still be processed with OCR below.
-	}
-	if (hasUsableText(embeddedText)) {
-		return { text: embeddedText, source: "conteudo-pdf" as const, ocrConfidence: 100, ocrUnavailable: false };
-	}
-	try {
-		const imagePrefix = path.join(tempDir, `page-${randomUUID()}`);
-		await execFile("pdftoppm", [
-			"-f",
-			String(pageNumber),
-			"-l",
-			String(pageNumber),
-			"-png",
-			"-r",
-			"180",
-			"-singlefile",
-			pdfPath,
-			imagePrefix,
-		]);
-		const result = await recognizePage(`${imagePrefix}.png`);
-		const confidence = result.data.confidence;
-		return {
-			text: result.data.text ?? "",
-			source: "ocr" as const,
-			ocrConfidence: Number.isFinite(confidence) ? Math.round(confidence) : 0,
-			ocrUnavailable: false,
-		};
-	} catch {
-		// OCR is optional: the operator can fill the data manually during review.
-		return { text: "", source: "conteudo-pdf" as const, ocrConfidence: 0, ocrUnavailable: true };
-	}
+async function extractPageText(
+	pdfPath: string,
+	pageNumber: number,
+	fileBuffer: Buffer,
+	embeddedText: string,
+): Promise<PageTextResult> {
+	return readPageText({
+		pdfPath,
+		pageNumber,
+		fileBuffer,
+		embeddedText,
+		tools: { ocr: { recognize: recognizeImage } },
+	});
 }
 
 function matchedEmployee(text: string, matricula: string | null, name: string | null, candidates: EmployeeRow[]): EmployeeRow | null {
@@ -279,7 +241,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 					const [copied] = await target.copyPages(source.document, [pageNumber - 1]);
 					target.addPage(copied);
 					const pageBuffer = Buffer.from(await target.save());
-					const extracted = await extractPageText(sourcePath, pageNumber, tempDir, embeddedTexts[pageNumber - 1] ?? "");
+					const extracted = await extractPageText(sourcePath, pageNumber, source.file.buffer, embeddedTexts[pageNumber - 1] ?? "");
 					const text = extracted.text;
 					const detectedMatricula = matriculaFromContent(text);
 					const detectedName = nameFromContent(text);
@@ -287,8 +249,11 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 					const name = employee?.name || detectedName || "";
 					const matricula = employee?.matricula || detectedMatricula;
 					const detectedCompetency = competencyFromContent(text);
-					const competency = detectedCompetency ?? fallbackCompetency;
-					const competencyDetected = Boolean(detectedCompetency);
+					// OCR com confiança baixa não decide a competência: a página vai
+					// para conferência manual em vez de receber um dado inventado.
+					const trustedCompetency = extracted.lowConfidence ? null : detectedCompetency;
+					const competency = trustedCompetency ?? fallbackCompetency;
+					const competencyDetected = Boolean(trustedCompetency);
 					const personKey = employee
 						? `employee:${employee.id}`
 						: name
@@ -306,9 +271,9 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 									Math.max(
 										20,
 										Math.round(
-											(extracted.source === "ocr" ? extracted.ocrConfidence * 0.6 : 72) +
+											(extracted.ocrApplied ? extracted.ocrConfidence * 0.6 : 72) +
 												(employee ? 22 : 0) +
-												(detectedCompetency ? 8 : 0),
+												(competencyDetected ? 8 : 0),
 										),
 									),
 								);
@@ -323,15 +288,17 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 						matricula,
 						competency,
 						competencyDetected,
-						competencySource: detectedCompetency ? extracted.source : fallbackCompetency ? "fallback" : "nao-identificada",
+						competencySource: competencyDetected ? extracted.source : fallbackCompetency ? "fallback" : "nao-identificada",
 						confidence,
 						employee: employee ?? null,
 						personKey,
 						duplicate: alreadyArchived || duplicateInUpload,
 						duplicateInUpload,
 						duplicateReason: alreadyArchived ? "já arquivada para esta pessoa e competência" : duplicateInUpload ? "repetida dentro do próprio lote" : null,
-						needsReview: !employee || !detectedCompetency || confidence < 85 || extracted.ocrUnavailable,
+						needsReview: !employee || !competencyDetected || confidence < 85 || extracted.ocrUnavailable || extracted.lowConfidence,
+						ocrApplied: extracted.ocrApplied,
 						ocrUnavailable: extracted.ocrUnavailable,
+						ocrLowConfidence: extracted.lowConfidence,
 					});
 					pages += 1;
 				} catch (error) {
@@ -349,10 +316,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 		}
 		return { entries, errors, fileResults };
 	} finally {
-		if (activeOcrWorker) {
-			await activeOcrWorker.terminate().catch(() => undefined);
-			activeOcrWorker = null;
-		}
+		await terminateOcr();
 		await fs.rm(tempDir, { recursive: true, force: true });
 	}
 }
@@ -375,6 +339,8 @@ function toPreview(entries: AnalysisEntry[], errors: AnalysisError[] = [], fileR
 			duplicateInUpload: entry.duplicateInUpload,
 			duplicateReason: entry.duplicateReason,
 			needsReview: entry.needsReview,
+			ocrApplied: entry.ocrApplied,
+			ocrUnavailable: entry.ocrUnavailable,
 		})),
 		newCount: entries.filter((entry) => !entry.duplicate).length,
 		duplicateCount,
@@ -437,7 +403,9 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 	const note = entry.needsReview
 		? entry.ocrUnavailable
 			? "OCR indisponível nesta página; confira os dados manualmente."
-			: "Confirme nome, matrícula e competência antes de arquivar."
+			: entry.ocrLowConfidence
+				? "Leitura por OCR com confiança baixa; confirme nome, matrícula e competência."
+				: "Confirme nome, matrícula e competência antes de arquivar."
 		: null;
 	try {
 		await db.transaction(async (tx) => {

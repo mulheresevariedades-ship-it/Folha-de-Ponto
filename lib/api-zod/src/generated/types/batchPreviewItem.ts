@@ -16,7 +16,12 @@ export interface BatchPreviewItem {
   competency: string;
   confidence: number;
   competencyDetected: boolean;
+  /** Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada */
   competencySource: BatchPreviewItemCompetencySource;
+  /** A leitura da página foi feita por OCR */
+  ocrApplied: boolean;
+  /** Nenhuma estratégia de OCR funcionou nesta página */
+  ocrUnavailable: boolean;
   duplicate: boolean;
   duplicateInUpload: boolean;
   /** @nullable */

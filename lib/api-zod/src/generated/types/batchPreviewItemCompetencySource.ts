@@ -6,12 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada
+ */
 export type BatchPreviewItemCompetencySource = typeof BatchPreviewItemCompetencySource[keyof typeof BatchPreviewItemCompetencySource];
 
 
 export const BatchPreviewItemCompetencySource = {
   'conteudo-pdf': 'conteudo-pdf',
-  ocr: 'ocr',
+  'ocr-conteudo-pdf': 'ocr-conteudo-pdf',
   fallback: 'fallback',
   'nao-identificada': 'nao-identificada',
 } as const;

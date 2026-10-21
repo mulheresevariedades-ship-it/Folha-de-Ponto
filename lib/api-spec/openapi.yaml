@@ -691,12 +691,17 @@ components:
         competency: { type: string }
         confidence: { type: integer }
         competencyDetected: { type: boolean }
-        competencySource: { type: string, enum: [conteudo-pdf, ocr, fallback, nao-identificada] }
+        competencySource:
+          type: string
+          enum: [conteudo-pdf, ocr-conteudo-pdf, fallback, nao-identificada]
+          description: Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada
+        ocrApplied: { type: boolean, description: A leitura da página foi feita por OCR }
+        ocrUnavailable: { type: boolean, description: Nenhuma estratégia de OCR funcionou nesta página }
         duplicate: { type: boolean }
         duplicateInUpload: { type: boolean }
         duplicateReason: { type: [string, "null"] }
         needsReview: { type: boolean }
-      required: [sourceFilename, pageNumber, name, matricula, competency, competencyDetected, competencySource, confidence, duplicate, duplicateInUpload, duplicateReason, needsReview]
+      required: [sourceFilename, pageNumber, name, matricula, competency, competencyDetected, competencySource, ocrApplied, ocrUnavailable, confidence, duplicate, duplicateInUpload, duplicateReason, needsReview]
     BatchError:
       type: object
       properties:
