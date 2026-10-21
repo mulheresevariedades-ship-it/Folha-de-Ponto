@@ -123,12 +123,18 @@ router.post("/settings/smtp/test", async (_req, res, next): Promise<void> => {
 		// `valid: false` e a mensagem real, em vez de um HTML de stack trace.
 		const reason = error instanceof Error ? error.message : "erro desconhecido";
 		const message = `Não foi possível conectar ao servidor SMTP: ${reason}`;
-		await recordAudit("configuracao_smtp_rejeitada", "settings", "smtp", {
-			valid: false,
-			source: testedSource,
-			host: testedHost,
-			reason,
-		});
+		try {
+			await recordAudit("configuracao_smtp_rejeitada", "settings", "smtp", {
+				valid: false,
+				source: testedSource,
+				host: testedHost,
+				reason,
+			});
+		} catch {
+			// Auditoria é melhor esforço aqui: se o banco caiu junto, não
+			// segura a resposta nem derruba o processo (o Express 4 deixa
+			// a rejeição de handler assíncrono escapar).
+		}
 		res.json({ valid: false, message, demoOnly: false });
 	}
 });
