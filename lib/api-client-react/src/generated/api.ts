@@ -2377,7 +2377,7 @@ export const getTestSmtpSettingsUrl = () => {
 }
 
 /**
- * @summary Valida campos sem abrir conexão externa
+ * @summary Abre conexão com o servidor SMTP para validar autenticação e credenciais
  */
 export const testSmtpSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<SmtpTestResult> => {
 
@@ -2429,7 +2429,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
     /**
- * @summary Valida campos sem abrir conexão externa
+ * @summary Abre conexão com o servidor SMTP para validar autenticação e credenciais
  */
 export const useTestSmtpSettings = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testSmtpSettings>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}

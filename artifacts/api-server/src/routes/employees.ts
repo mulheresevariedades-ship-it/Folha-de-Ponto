@@ -114,7 +114,11 @@ async function buildImportPreview(buffer: Buffer) {
 	const seen = new Set<string>();
 	let newCount = 0;
 	let updatedCount = 0;
-	let skippedCount = invalidRows;
+	// Ignorados = matrícula repetida na planilha; erros = linhas com estrutura
+	// inválida (nome, CPF, carga horária ou e-mail) — contagens separadas para
+	// o operador distinguir duplicidade de dado problemático.
+	let skippedCount = 0;
+	const errorCount = invalidRows;
 	const previewRows: Array<Record<string, unknown>> = [];
 
 	for (const employee of rows) {
@@ -132,8 +136,8 @@ async function buildImportPreview(buffer: Buffer) {
 			previewRows.push(maskedImportRow(employee, "novo"));
 		}
 	}
-	if (invalidRows) previewRows.push({ action: `${invalidRows} linha(s) ignorada(s): ${issues.slice(0, 5).map((issue) => `linha ${issue.rowNumber} (${issue.reason})`).join("; ")}${issues.length > 5 ? "; ..." : ""}` });
-	return { newCount, updatedCount, skippedCount, rows: previewRows };
+	if (invalidRows) previewRows.push({ action: `${invalidRows} linha(s) com erro: ${issues.slice(0, 5).map((issue) => `linha ${issue.rowNumber} (${issue.reason})`).join("; ")}${issues.length > 5 ? "; ..." : ""}` });
+	return { newCount, updatedCount, skippedCount, errorCount, rows: previewRows };
 }
 
 router.get("/employees", async (req, res, next): Promise<void> => {

@@ -329,7 +329,8 @@ export const PreviewEmployeeImportBody = zod.object({
 export const PreviewEmployeeImportResponse = zod.object({
   "newCount": zod.number().int(),
   "updatedCount": zod.number().int(),
-  "skippedCount": zod.number().int(),
+  "skippedCount": zod.number().int().describe('Registros ignorados por matrícula repetida na planilha'),
+  "errorCount": zod.number().int().describe('Registros com erro de estrutura (nome'),
   "rows": zod.array(zod.object({
   "name": zod.string().optional(),
   "matricula": zod.string().optional(),
@@ -436,7 +437,8 @@ export const PreviewCalendarImportBody = zod.object({
 export const PreviewCalendarImportResponse = zod.object({
   "newCount": zod.number().int(),
   "updatedCount": zod.number().int(),
-  "skippedCount": zod.number().int(),
+  "skippedCount": zod.number().int().describe('Registros ignorados por matrícula repetida na planilha'),
+  "errorCount": zod.number().int().describe('Registros com erro de estrutura (nome'),
   "rows": zod.array(zod.object({
   "name": zod.string().optional(),
   "matricula": zod.string().optional(),
@@ -624,7 +626,7 @@ export const UpdateSmtpSettingsResponse = zod.object({
 
 
 /**
- * @summary Valida campos sem abrir conexão externa
+ * @summary Abre conexão com o servidor SMTP para validar autenticação e credenciais
  */
 export const TestSmtpSettingsResponse = zod.object({
   "valid": zod.boolean(),

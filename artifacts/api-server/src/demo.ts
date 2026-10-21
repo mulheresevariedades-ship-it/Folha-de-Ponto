@@ -147,6 +147,21 @@ app.post("/api/lock/release", (req, res) => {
 	res.json(lockState(String(req.body.sessionId ?? "")));
 });
 
+// Mesmo contrato da API real (routes/lock.ts): gravações exigem o lease de 30 s
+// da sessão; consultas ficam livres e um lease abandonado expira sozinho.
+app.use((req, res, next) => {
+	if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
+	if (req.path.startsWith("/api/lock/")) return next();
+	const sessionId = String(req.headers["x-demo-session"] ?? "");
+	if (!sessionId) return void res.status(428).json({ message: "A sessão de demonstração ainda não está ativa." });
+	const active = Boolean(lockOwner && lockExpiresAt && lockExpiresAt > Date.now());
+	if (!active || lockOwner !== sessionId) {
+		const message = lockOwner === sessionId ? "A sessão de edição expirou. Atualize a página para retomar." : "Sistema em uso por outro usuário.";
+		return void res.status(423).json({ message });
+	}
+	return next();
+});
+
 app.get("/api/dashboard", (_req, res) => res.json({
 	total: timesheets.length,
 	recognized: 1,
@@ -235,7 +250,7 @@ app.patch("/api/employees/:id", (req, res) => {
 	return res.json(employee);
 });
 app.delete("/api/employees/:id", (_req, res) => res.status(204).end());
-app.post("/api/employees/import/preview", (_req, res) => res.json({ newCount: 0, updatedCount: 0, skippedCount: 0, rows: [] }));
+app.post("/api/employees/import/preview", (_req, res) => res.json({ newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, rows: [] }));
 app.post("/api/employees/import", (_req, res) => res.json({ imported: 0, updated: 0, skipped: 0 }));
 
 app.get("/api/calendar", (_req, res) => res.json(calendar));

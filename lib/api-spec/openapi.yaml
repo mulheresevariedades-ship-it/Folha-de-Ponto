@@ -490,7 +490,7 @@ paths:
     post:
       operationId: testSmtpSettings
       tags: [settings]
-      summary: Valida campos sem abrir conexão externa
+      summary: Abre conexão com o servidor SMTP para validar autenticação e credenciais
       responses:
         "200":
           description: Resultado da validação local
@@ -658,11 +658,12 @@ components:
       properties:
         newCount: { type: integer }
         updatedCount: { type: integer }
-        skippedCount: { type: integer }
+        skippedCount: { type: integer, description: Registros ignorados por matrícula repetida na planilha }
+        errorCount: { type: integer, description: Registros com erro de estrutura (nome, CPF, carga horária ou e-mail) }
         rows:
           type: array
           items: { $ref: "#/components/schemas/ImportPreviewRow" }
-      required: [newCount, updatedCount, skippedCount, rows]
+      required: [newCount, updatedCount, skippedCount, errorCount, rows]
     ImportSummary:
       type: object
       properties:

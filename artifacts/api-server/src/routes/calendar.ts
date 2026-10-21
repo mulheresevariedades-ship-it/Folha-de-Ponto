@@ -281,7 +281,8 @@ router.post("/calendar/import", upload.single("file"), async (req, res, next): P
 		req.log.info({ imported, updated, skipped }, "Academic calendar spreadsheet imported");
 		res.json({ imported, updated, skipped });
 	} catch (error) {
-		next(error);
+		// Erros de validação (arquivo ou cabeçalhos) respondem 422, igual à prévia.
+		res.status(422).json({ message: error instanceof Error ? error.message : "Não foi possível importar a planilha." });
 	}
 });
 

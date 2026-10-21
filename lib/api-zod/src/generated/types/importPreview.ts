@@ -10,6 +10,9 @@ import type { ImportPreviewRow } from './importPreviewRow';
 export interface ImportPreview {
   newCount: number;
   updatedCount: number;
+  /** Registros ignorados por matrícula repetida na planilha */
   skippedCount: number;
+  /** Registros com erro de estrutura (nome */
+  errorCount: number;
   rows: ImportPreviewRow[];
 }

@@ -50,6 +50,26 @@ $env:PONTO_DATA_DIR="D:\archive\folhas"   # opcional
 pnpm --filter @workspace/api-server run demo
 ```
 
+### Executando de uma pasta de rede compartilhada
+
+O sistema pode rodar direto de um compartilhamento de rede, sem instalação
+em cada computador:
+
+1. Copie a pasta do projeto para o compartilhamento (ex.: `\\servidor\FolhaPonto`).
+2. Defina `PONTO_DATA_DIR` com o caminho absoluto da pasta de dados **na rede**,
+   para que os arquivos não fiquem presos a uma máquina:
+   `$env:PONTO_DATA_DIR = "\\servidor\FolhaPonto\data"`.
+3. Exporte `DATABASE_URL` no momento de iniciar (o `.env` não é carregado
+   automaticamente).
+4. Inicie a API: `pnpm --filter @workspace/api-server run dev`; em outra janela,
+   o frontend: `pnpm --filter @workspace/ponto-digital run dev`.
+
+O lock simples de operações vale também no modo demo: toda gravação exige o
+lease de 30 s da sessão (liberado automaticamente ao abandonar; consultas não
+são bloqueadas) e, enquanto outro usuário estiver gravando, a interface exibe
+"Sistema em uso por outro usuário. Aguarde a conclusão da operação antes de
+salvar novas alterações."
+
 ## Arquivo permanente em bucket (S3/R2)
 
 Para produção, os PDFs podem ser arquivados em um bucket S3-compatível
