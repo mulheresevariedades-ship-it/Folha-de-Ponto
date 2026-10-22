@@ -101,6 +101,13 @@ if (isMain) {
 			? path.resolve(process.argv[flagIndex + 1])
 			: path.join(repoRoot, "dist-portable", "server", "tessdata");
 	const cacheDir = path.join(repoRoot, "node_modules", ".cache", "tessdata");
-	const ready = await fetchTessdata({ target, cacheDir });
-	log(`modelos prontos em ${target} (${ready.length} arquivo(s))`);
+	try {
+		const ready = await fetchTessdata({ target, cacheDir });
+		log(`modelos prontos em ${target} (${ready.length} arquivo(s))`);
+	} catch (error) {
+		// O script roda dentro do build (Vercel) e do empacotador portátil:
+		// falhar aqui não pode derrubar o build — o OCR volta para o
+		// download automático, com limite de tempo.
+		log(`modelo indisponível: ${error instanceof Error ? error.message : String(error)}`);
+	}
 }
