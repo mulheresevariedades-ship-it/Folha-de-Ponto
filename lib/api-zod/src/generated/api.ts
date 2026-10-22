@@ -18,6 +18,27 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Situação do OCR no servidor: se o motor existe, se o modelo de idioma está presente e qual foi a última falha. Sem caminhos de arquivo.
+ * @summary Diagnóstico do OCR
+ */
+export const GetOcrDiagnosticsResponse = zod.object({
+  "motorDisponivel": zod.boolean(),
+  "modeloLocal": zod.object({
+  "encontrado": zod.boolean().optional(),
+  "idiomas": zod.array(zod.string()).optional(),
+  "arquivos": zod.array(zod.string()).optional(),
+  "status": zod.string().nullish()
+}),
+  "cacheModelos": zod.number().int(),
+  "ultimaFalha": zod.object({
+  "motivo": zod.string().optional(),
+  "em": zod.string().optional(),
+  "mensagem": zod.string().optional()
+}).nullish()
+})
+
+
+/**
  * @summary Resumo da competência
  */
 export const GetDashboardQueryParams = zod.object({
@@ -154,6 +175,7 @@ export const PreviewBatchResponse = zod.object({
   "competencySource": zod.enum(['conteudo-pdf', 'ocr-conteudo-pdf', 'fallback', 'nao-identificada']).describe('Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada'),
   "ocrApplied": zod.boolean().describe('A leitura da página foi feita por OCR'),
   "ocrUnavailable": zod.boolean().describe('Nenhuma estratégia de OCR funcionou nesta página'),
+  "ocrUnavailableReason": zod.union([zod.literal('modelo-indisponivel'),zod.literal('tempo-limite'),zod.literal('motor-indisponivel'),zod.literal('leitura-falhou'),zod.literal(null)]).nullable().describe('Por que o OCR não conseguiu ler a página'),
   "duplicate": zod.boolean(),
   "duplicateInUpload": zod.boolean(),
   "duplicateReason": zod.string().nullable(),
@@ -203,6 +225,7 @@ export const ProcessBatchResponse = zod.object({
   "competencySource": zod.enum(['conteudo-pdf', 'ocr-conteudo-pdf', 'fallback', 'nao-identificada']).describe('Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada'),
   "ocrApplied": zod.boolean().describe('A leitura da página foi feita por OCR'),
   "ocrUnavailable": zod.boolean().describe('Nenhuma estratégia de OCR funcionou nesta página'),
+  "ocrUnavailableReason": zod.union([zod.literal('modelo-indisponivel'),zod.literal('tempo-limite'),zod.literal('motor-indisponivel'),zod.literal('leitura-falhou'),zod.literal(null)]).nullable().describe('Por que o OCR não conseguiu ler a página'),
   "duplicate": zod.boolean(),
   "duplicateInUpload": zod.boolean(),
   "duplicateReason": zod.string().nullable(),

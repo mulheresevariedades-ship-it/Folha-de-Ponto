@@ -44,16 +44,9 @@ export async function fetchTessdata({
 	if (!target) throw new Error("Informe a pasta de destino dos modelos de idioma.");
 	await mkdir(target, { recursive: true });
 	if (cacheDir) await mkdir(cacheDir, { recursive: true });
-	// Um arquivo de texto garante que a pasta nunca fica vazia: ela entra no
-	// pacote da Vercel por includeFiles, e um padrão sem nenhum arquivo pode
-	// derrubar o build.
-	await writeFile(
-		path.join(target, "LEIA-ME.txt"),
-		"Modelos de idioma do OCR (tesseract.js).\n\nCopie os arquivos .traineddata.gz deste pasta para\noutro local se o OCR estiver apontando para outro caminho.\n",
-		"utf8",
-	);
 
 	const ready = [];
+	const falhas = [];
 	for (const language of languages) {
 		const fileName = `${language}.traineddata.gz`;
 		const targetFile = path.join(target, fileName);
@@ -78,11 +71,22 @@ export async function fetchTessdata({
 			if (!quiet) log(`${fileName} baixado (${(await fileSize(targetFile))})`);
 			ready.push(targetFile);
 		} catch (error) {
+			falhas.push(`${fileName}: ${error instanceof Error ? error.message : String(error)}`);
 			if (!quiet) {
 				log(`não foi possível baixar ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
 	}
+	// Um arquivo de texto na pasta registra o resultado do download: ele entra
+	// no pacote da Vercel (includeFiles) e o diagnóstico da API mostra se o
+	// modelo chegou a ser baixado no build.
+	await writeFile(
+		path.join(target, "MODELO.txt"),
+		falhas.length === 0
+			? `OK: ${ready.map((arquivo) => path.basename(arquivo)).join(", ")}\n`
+			: `FALHA: ${falhas.join(" | ")}\n`,
+		"utf8",
+	);
 	return ready;
 }
 
@@ -95,19 +99,28 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
 	const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 	const repoRoot = path.resolve(scriptDir, "..", "..");
-	const flagIndex = process.argv.indexOf("--destino");
-	const target =
-		flagIndex !== -1 && process.argv[flagIndex + 1]
-			? path.resolve(process.argv[flagIndex + 1])
-			: path.join(repoRoot, "dist-portable", "server", "tessdata");
+	// `--destino` pode vir várias vezes: o build precisa do modelo em mais
+	// de um lugar (a pasta de saída e a pasta do bundle).
+	const targets = [];
+	for (let index = 0; index < process.argv.length; index += 1) {
+		if (process.argv[index] === "--destino" && process.argv[index + 1]) {
+			targets.push(path.resolve(process.argv[index + 1]));
+			index += 1;
+		}
+	}
+	if (targets.length === 0) {
+		targets.push(path.join(repoRoot, "dist-portable", "server", "tessdata"));
+	}
 	const cacheDir = path.join(repoRoot, "node_modules", ".cache", "tessdata");
-	try {
-		const ready = await fetchTessdata({ target, cacheDir });
-		log(`modelos prontos em ${target} (${ready.length} arquivo(s))`);
-	} catch (error) {
-		// O script roda dentro do build (Vercel) e do empacotador portátil:
-		// falhar aqui não pode derrubar o build — o OCR volta para o
-		// download automático, com limite de tempo.
-		log(`modelo indisponível: ${error instanceof Error ? error.message : String(error)}`);
+	for (const target of targets) {
+		try {
+			const ready = await fetchTessdata({ target, cacheDir });
+			log(`modelos prontos em ${target} (${ready.length} arquivo(s))`);
+		} catch (error) {
+			// O script roda dentro do build (Vercel) e do empacotador portátil:
+			// falhar aqui não pode derrubar o build — o OCR volta para o
+			// download automático, com limite de tempo.
+			log(`modelo indisponível em ${target}: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 }

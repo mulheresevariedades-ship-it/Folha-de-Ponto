@@ -7,7 +7,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { extractPageRaster } from "./pdf-raster";
 import { readPageText } from "./pdf-page-text";
 import { extractPdfPageTexts } from "./pdf-text";
-import { recognizeImage, terminateOcr } from "./ocr";
+import { ocrDiagnostics, recognizeImage, terminateOcr } from "./ocr";
 import { competencyFromContent, matriculaFromContent, nameFromContent } from "./timesheet-files";
 
 /**
@@ -100,6 +100,13 @@ describe("OCR de PDF digitalizado", { skip: ignorar ? "desligado por PONTO_OCR_T
 			else process.env.PONTO_OCR_TIMEOUT_MS = anterior;
 			await terminateOcr();
 		}
+	});
+
+	it("relata a situação do OCR para o diagnóstico", () => {
+		const diagnostico = ocrDiagnostics();
+		assert.equal(diagnostico.motorDisponivel, true, "o motor do OCR acompanha o pacote");
+		assert.ok(diagnostico.modeloLocal.idiomas.length > 0, "há pelo menos um idioma configurado");
+		assert.ok(Array.isArray(diagnostico.cache.arquivos));
 	});
 
 	it("lê um PDF misto: página de texto pela camada de texto e página digitalizada pelo OCR", async (t) => {

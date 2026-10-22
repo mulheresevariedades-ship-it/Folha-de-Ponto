@@ -12,7 +12,7 @@
  * assim, com limite de tempo, para não prender a requisição.
  */
 import { createWorker, type Worker } from "tesseract.js";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +32,29 @@ export type OcrEngine = {
 
 /** Confiança mínima para confiar no que o OCR leu. */
 export const OCR_MIN_CONFIDENCE = 60;
+
+/**
+ * Por que o OCR não conseguiu ler a página.
+ *
+ * O motivo vai para a nota da folha: o operador precisa saber se o problema
+ * foi o modelo de idioma, o prazo estourado ou o motor do OCR.
+ */
+export type OcrFailureReason =
+	| "modelo-indisponivel"
+	| "tempo-limite"
+	| "motor-indisponivel"
+	| "leitura-falhou";
+
+/** Erro do OCR com o motivo da falha. */
+export class OcrError extends Error {
+	constructor(
+		message: string,
+		readonly reason: OcrFailureReason,
+	) {
+		super(message);
+		this.name = "OcrError";
+	}
+}
 
 const DEFAULT_LANGUAGES = "por+eng";
 
@@ -56,7 +79,10 @@ async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Prom
 		return await Promise.race([
 			work,
 			new Promise<never>((_resolve, reject) => {
-				timer = setTimeout(() => reject(new Error(`Tempo limite do OCR excedido (${label}).`)), ms);
+				timer = setTimeout(
+					() => reject(new OcrError(`Tempo limite do OCR excedido (${label}).`, "tempo-limite")),
+					ms,
+				);
 				timer.unref?.();
 			}),
 		]);
@@ -73,16 +99,8 @@ function configuredLanguages(): string[] {
 		.filter((item) => item.length > 0);
 }
 
-/**
- * Onde estão os modelos de idioma.
- *
- * Prioridade:
- * 1. `PONTO_TESSDATA_PATH` (apontado pelo operador);
- * 2. a pasta `tessdata` ao lado do bundle (modo portátil);
- * 3. internet (padrão do `tesseract.js`).
- */
-function resolveLanguageAssets(): { langPath?: string; languages: string[] } {
-	const languages = configuredLanguages();
+/** Pastas onde o modelo de idioma pode estar, em ordem de prioridade. */
+function candidateFolders(): string[] {
 	const candidates: string[] = [];
 	if (process.env.PONTO_TESSDATA_PATH) candidates.push(process.env.PONTO_TESSDATA_PATH);
 	try {
@@ -90,7 +108,23 @@ function resolveLanguageAssets(): { langPath?: string; languages: string[] } {
 	} catch {
 		// Bundle sem `import.meta.url`: segue com o download.
 	}
-	for (const candidate of candidates) {
+	// Na Vercel o modelo pode ficar na raiz do programa (`/var/task/tessdata`).
+	candidates.push(path.join(process.cwd(), "tessdata"), path.join(process.cwd(), "static", "tessdata"));
+	return candidates;
+}
+
+/**
+ * Onde estão os modelos de idioma.
+ *
+ * Prioridade:
+ * 1. `PONTO_TESSDATA_PATH` (apontado pelo operador);
+ * 2. a pasta `tessdata` ao lado do bundle (modo portátil);
+ * 3. a pasta `tessdata` na raiz do programa (Vercel);
+ * 4. internet (padrão do `tesseract.js`).
+ */
+function resolveLanguageAssets(): { langPath?: string; languages: string[] } {
+	const languages = configuredLanguages();
+	for (const candidate of candidateFolders()) {
 		if (!candidate || !existsSync(candidate)) continue;
 		const available = languages.filter((language) => existsSync(path.join(candidate, `${language}.traineddata.gz`)));
 		if (available.length > 0) return { langPath: candidate, languages: available };
@@ -111,6 +145,20 @@ function resolveCachePath(): string {
 
 let activeWorker: Worker | null = null;
 let activeKey = "";
+
+/** Última falha do OCR nesta instância (para o diagnóstico da API). */
+let lastFailure: { reason: OcrFailureReason; message: string; at: string } | null = null;
+
+/** Classifica a falha do `tesseract.js` em um motivo que o operador entende. */
+function classifyFailure(error: unknown): OcrError {
+	if (error instanceof OcrError) return error;
+	const message = error instanceof Error ? error.message : String(error);
+	const reason: OcrFailureReason =
+		/traineddata|langPath|idioma|language/i.test(message)
+			? "modelo-indisponivel"
+			: "motor-indisponivel";
+	return new OcrError(message, reason);
+}
 
 async function ensureWorker(deadline: number): Promise<Worker> {
 	const { langPath, languages } = resolveLanguageAssets();
@@ -148,14 +196,21 @@ async function ensureWorker(deadline: number): Promise<Worker> {
 		return worker;
 	} catch (error) {
 		cancelado = true;
-		throw error;
+		throw classifyFailure(error);
 	}
 }
 
 /** Lê o texto de uma imagem (PNG ou JPEG). */
 export async function recognizeImage(image: Buffer): Promise<OcrOutcome> {
 	const deadline = Date.now() + ocrTimeoutMs();
-	const worker = await ensureWorker(deadline);
+	let worker: Worker;
+	try {
+		worker = await ensureWorker(deadline);
+	} catch (error) {
+		const failure = classifyFailure(error);
+		lastFailure = { reason: failure.reason, message: failure.message, at: new Date().toISOString() };
+		throw failure;
+	}
 	const pending = worker.recognize(image);
 	try {
 		const result = await withTimeout(
@@ -180,7 +235,9 @@ export async function recognizeImage(image: Buffer): Promise<OcrOutcome> {
 			() => worker.terminate().catch(() => undefined),
 			() => worker.terminate().catch(() => undefined),
 		);
-		throw error;
+		const failure = classifyFailure(error);
+		lastFailure = { reason: failure.reason, message: failure.message, at: new Date().toISOString() };
+		throw failure;
 	}
 }
 
@@ -201,4 +258,55 @@ export function isOcrAvailable(): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Situação do OCR neste ambiente.
+ *
+ * Serve para o operador entender *por que* o OCR não rodou: modelo de
+ * idioma ausente, motor indisponível ou prazo estourado. Não expõe
+ * caminhos de arquivo, só o que importa.
+ */
+export function ocrDiagnostics(): {
+	motorDisponivel: boolean;
+	modeloLocal: { encontrado: boolean; idiomas: string[]; arquivos: string[]; status: string | null };
+	cache: { arquivos: string[] };
+	ultimaFalha: { reason: OcrFailureReason; message: string; at: string } | null;
+} {
+	const { langPath, languages } = resolveLanguageAssets();
+	const cachePath = resolveCachePath();
+	let arquivos: string[] = [];
+	try {
+		arquivos = readdirSync(cachePath).filter((nome) => nome.endsWith(".traineddata"));
+	} catch {
+		arquivos = [];
+	}
+	// A pasta do modelo pode existir mesmo sem nenhum modelo dentro (quando o
+	// download no build falhou): o arquivo `MODELO.txt` conta o que houve.
+	const pasta = langPath ?? candidateFolders().find((candidata) => existsSync(candidata));
+	let arquivosDoModelo: string[] = [];
+	let status: string | null = null;
+	if (pasta) {
+		try {
+			arquivosDoModelo = readdirSync(pasta);
+		} catch {
+			arquivosDoModelo = [];
+		}
+		try {
+			status = readFileSync(path.join(pasta, "MODELO.txt"), "utf8").trim();
+		} catch {
+			status = null;
+		}
+	}
+	return {
+		motorDisponivel: isOcrAvailable(),
+		modeloLocal: {
+			encontrado: Boolean(langPath),
+			idiomas: languages,
+			arquivos: arquivosDoModelo,
+			status,
+		},
+		cache: { arquivos },
+		ultimaFalha: lastFailure,
+	};
 }

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BatchPreviewItemCompetencySource } from './batchPreviewItemCompetencySource';
+import type { BatchPreviewItemOcrUnavailableReason } from './batchPreviewItemOcrUnavailableReason';
 
 export interface BatchPreviewItem {
   sourceFilename: string;
@@ -22,6 +23,11 @@ export interface BatchPreviewItem {
   ocrApplied: boolean;
   /** Nenhuma estratégia de OCR funcionou nesta página */
   ocrUnavailable: boolean;
+  /**
+     * Por que o OCR não conseguiu ler a página
+     * @nullable
+     */
+  ocrUnavailableReason: BatchPreviewItemOcrUnavailableReason;
   duplicate: boolean;
   duplicateInUpload: boolean;
   /** @nullable */

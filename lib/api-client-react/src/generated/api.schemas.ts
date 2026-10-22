@@ -9,6 +9,31 @@ export interface HealthStatus {
   status: string;
 }
 
+export type OcrDiagnosticsModeloLocal = {
+  encontrado?: boolean;
+  idiomas?: string[];
+  arquivos?: string[];
+  /** @nullable */
+  status?: string | null;
+};
+
+/**
+ * @nullable
+ */
+export type OcrDiagnosticsUltimaFalha = {
+  motivo?: string;
+  em?: string;
+  mensagem?: string;
+} | null;
+
+export interface OcrDiagnostics {
+  motorDisponivel: boolean;
+  modeloLocal: OcrDiagnosticsModeloLocal;
+  cacheModelos: number;
+  /** @nullable */
+  ultimaFalha?: OcrDiagnosticsUltimaFalha;
+}
+
 export interface DashboardMetrics {
   total: number;
   recognized: number;
@@ -160,6 +185,20 @@ export const BatchPreviewItemCompetencySource = {
   'nao-identificada': 'nao-identificada',
 } as const;
 
+/**
+ * Por que o OCR não conseguiu ler a página
+ * @nullable
+ */
+export type BatchPreviewItemOcrUnavailableReason = typeof BatchPreviewItemOcrUnavailableReason[keyof typeof BatchPreviewItemOcrUnavailableReason] | null;
+
+
+export const BatchPreviewItemOcrUnavailableReason = {
+  'modelo-indisponivel': 'modelo-indisponivel',
+  'tempo-limite': 'tempo-limite',
+  'motor-indisponivel': 'motor-indisponivel',
+  'leitura-falhou': 'leitura-falhou',
+} as const;
+
 export interface BatchPreviewItem {
   sourceFilename: string;
   pageNumber: number;
@@ -175,6 +214,11 @@ export interface BatchPreviewItem {
   ocrApplied: boolean;
   /** Nenhuma estratégia de OCR funcionou nesta página */
   ocrUnavailable: boolean;
+  /**
+     * Por que o OCR não conseguiu ler a página
+     * @nullable
+     */
+  ocrUnavailableReason: BatchPreviewItemOcrUnavailableReason;
   duplicate: boolean;
   duplicateInUpload: boolean;
   /** @nullable */

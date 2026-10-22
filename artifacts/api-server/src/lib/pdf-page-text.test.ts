@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PageRaster } from "./pdf-raster";
+import { OcrError } from "./ocr";
 import { readPageText, type PageTextTools } from "./pdf-page-text";
 
 const rasterFake: PageRaster = {
@@ -130,6 +131,7 @@ describe("readPageText", () => {
 		assert.equal(result.ocrUnavailable, true);
 		assert.equal(result.ocrApplied, false);
 		assert.equal(result.text, "");
+		assert.equal(result.ocrUnavailableReason, "motor-indisponivel");
 	});
 
 	it("marca OCR indisponível quando o motor de OCR falha em todas as estratégias", async () => {
@@ -144,5 +146,20 @@ describe("readPageText", () => {
 		});
 		assert.equal(result.ocrUnavailable, true);
 		assert.equal(result.ocrApplied, false);
+		assert.equal(result.ocrUnavailableReason, "leitura-falhou");
+	});
+
+	it("guarda o motivo da falha do OCR para a conferência manual", async () => {
+		const result = await lerPagina({
+			extractRaster: async () => rasterFake,
+			renderWithPdftoppm: async () => Buffer.from("png"),
+			ocr: {
+				recognize: async () => {
+					throw new OcrError("Tempo limite do OCR excedido (leitura da imagem).", "tempo-limite");
+				},
+			},
+		});
+		assert.equal(result.ocrUnavailable, true);
+		assert.equal(result.ocrUnavailableReason, "tempo-limite");
 	});
 });

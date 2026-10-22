@@ -47,6 +47,7 @@ import type {
   ListTimesheetsParams,
   LockSessionInput,
   LockState,
+  OcrDiagnostics,
   SmtpSettings,
   SmtpSettingsInput,
   SmtpTestResult,
@@ -148,6 +149,84 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetOcrDiagnosticsUrl = () => {
+
+
+
+
+  return `/api/ocr-diagnostico`
+}
+
+/**
+ * Situação do OCR no servidor: se o motor existe, se o modelo de idioma está presente e qual foi a última falha. Sem caminhos de arquivo.
+ * @summary Diagnóstico do OCR
+ */
+export const getOcrDiagnostics = async ( options?: Parameters<typeof customFetch>[1]): Promise<OcrDiagnostics> => {
+
+  return customFetch<OcrDiagnostics>(getGetOcrDiagnosticsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOcrDiagnosticsQueryKey = () => {
+    return [
+    `/api/ocr-diagnostico`
+    ] as const;
+    }
+
+
+export const getGetOcrDiagnosticsQueryOptions = <TData = Awaited<ReturnType<typeof getOcrDiagnostics>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOcrDiagnostics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOcrDiagnosticsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOcrDiagnostics>>> = ({ signal }) => getOcrDiagnostics({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOcrDiagnostics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOcrDiagnosticsQueryResult = NonNullable<Awaited<ReturnType<typeof getOcrDiagnostics>>>
+export type GetOcrDiagnosticsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Diagnóstico do OCR
+ */
+
+export function useGetOcrDiagnostics<TData = Awaited<ReturnType<typeof getOcrDiagnostics>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOcrDiagnostics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOcrDiagnosticsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

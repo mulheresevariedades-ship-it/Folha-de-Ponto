@@ -35,6 +35,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /ocr-diagnostico:
+    get:
+      operationId: getOcrDiagnostics
+      tags: [health]
+      summary: Diagnóstico do OCR
+      description: >
+        Situação do OCR no servidor: se o motor existe, se o modelo de idioma
+        está presente e qual foi a última falha. Sem caminhos de arquivo.
+      responses:
+        "200":
+          description: Diagnóstico do OCR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcrDiagnostics"
   /dashboard:
     get:
       operationId: getDashboard
@@ -565,6 +580,28 @@ components:
           type: string
       required:
         - status
+    OcrDiagnostics:
+      type: object
+      properties:
+        motorDisponivel: { type: boolean }
+        modeloLocal:
+          type: object
+          properties:
+            encontrado: { type: boolean }
+            idiomas: { type: array, items: { type: string } }
+            arquivos: { type: array, items: { type: string } }
+            status: { type: [string, "null"] }
+        cacheModelos: { type: integer }
+        ultimaFalha:
+          type: [object, "null"]
+          properties:
+            motivo: { type: string }
+            em: { type: string }
+            mensagem: { type: string }
+      required:
+        - motorDisponivel
+        - modeloLocal
+        - cacheModelos
     DashboardMetrics:
       type: object
       properties:
@@ -697,11 +734,15 @@ components:
           description: Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada
         ocrApplied: { type: boolean, description: A leitura da página foi feita por OCR }
         ocrUnavailable: { type: boolean, description: Nenhuma estratégia de OCR funcionou nesta página }
+        ocrUnavailableReason:
+          type: [string, "null"]
+          enum: [modelo-indisponivel, tempo-limite, motor-indisponivel, leitura-falhou, null]
+          description: Por que o OCR não conseguiu ler a página
         duplicate: { type: boolean }
         duplicateInUpload: { type: boolean }
         duplicateReason: { type: [string, "null"] }
         needsReview: { type: boolean }
-      required: [sourceFilename, pageNumber, name, matricula, competency, competencyDetected, competencySource, ocrApplied, ocrUnavailable, confidence, duplicate, duplicateInUpload, duplicateReason, needsReview]
+      required: [sourceFilename, pageNumber, name, matricula, competency, competencyDetected, competencySource, ocrApplied, ocrUnavailable, ocrUnavailableReason, confidence, duplicate, duplicateInUpload, duplicateReason, needsReview]
     BatchError:
       type: object
       properties:

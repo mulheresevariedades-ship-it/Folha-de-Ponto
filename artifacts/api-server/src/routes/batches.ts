@@ -61,6 +61,7 @@ type AnalysisEntry = {
 	needsReview: boolean;
 	ocrApplied: boolean;
 	ocrUnavailable: boolean;
+	ocrUnavailableReason: string | null;
 	ocrLowConfidence: boolean;
 };
 type AnalysisError = { sourceFilename: string; pageNumber?: number; message: string };
@@ -298,6 +299,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 						needsReview: !employee || !competencyDetected || confidence < 85 || extracted.ocrUnavailable || extracted.lowConfidence,
 						ocrApplied: extracted.ocrApplied,
 						ocrUnavailable: extracted.ocrUnavailable,
+						ocrUnavailableReason: extracted.ocrUnavailableReason,
 						ocrLowConfidence: extracted.lowConfidence,
 					});
 					pages += 1;
@@ -341,6 +343,7 @@ function toPreview(entries: AnalysisEntry[], errors: AnalysisError[] = [], fileR
 			needsReview: entry.needsReview,
 			ocrApplied: entry.ocrApplied,
 			ocrUnavailable: entry.ocrUnavailable,
+			ocrUnavailableReason: entry.ocrUnavailableReason,
 		})),
 		newCount: entries.filter((entry) => !entry.duplicate).length,
 		duplicateCount,
@@ -349,6 +352,22 @@ function toPreview(entries: AnalysisEntry[], errors: AnalysisError[] = [], fileR
 		errors,
 		fileResults,
 	};
+}
+
+/** Motivo do OCR em português, para a nota da folha. */
+function ocrReasonText(reason: string | null): string {
+	switch (reason) {
+		case "modelo-indisponivel":
+			return "modelo de idioma indisponível";
+		case "tempo-limite":
+			return "tempo limite do OCR excedido";
+		case "motor-indisponivel":
+			return "motor de OCR indisponível";
+		case "leitura-falhou":
+			return "leitura da imagem falhou";
+		default:
+			return "motivo desconhecido";
+	}
 }
 
 type FileChange = { target: string; backupPath: string; restorePath: string };
@@ -402,7 +421,7 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 			: "reconhecida";
 	const note = entry.needsReview
 		? entry.ocrUnavailable
-			? "OCR indisponível nesta página; confira os dados manualmente."
+			? `OCR indisponível nesta página (${ocrReasonText(entry.ocrUnavailableReason)}); confira os dados manualmente.`
 			: entry.ocrLowConfidence
 				? "Leitura por OCR com confiança baixa; confirme nome, matrícula e competência."
 				: "Confirme nome, matrícula e competência antes de arquivar."

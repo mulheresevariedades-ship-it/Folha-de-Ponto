@@ -24,7 +24,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { hasUsableText } from "./pdf-text";
 import { extractPageRaster, type PageRaster } from "./pdf-raster";
-import { OCR_MIN_CONFIDENCE, type OcrEngine } from "./ocr";
+import { OCR_MIN_CONFIDENCE, OcrError, type OcrEngine, type OcrFailureReason } from "./ocr";
 
 const execFile = promisify(execFileCallback);
 
@@ -43,6 +43,8 @@ export type PageTextResult = {
 	ocrConfidence: number;
 	/** Nenhuma estratégia de OCR funcionou: a página vai para revisão manual. */
 	ocrUnavailable: boolean;
+	/** Por que o OCR não funcionou (quando ele falhou). */
+	ocrUnavailableReason: OcrFailureReason | null;
 	/** O OCR leu, mas com confiança baixa: os campos não são confiáveis. */
 	lowConfidence: boolean;
 	ocrStrategy: OcrStrategy;
@@ -126,6 +128,7 @@ export async function readPageText(options: {
 			ocrApplied: false,
 			ocrConfidence: 0,
 			ocrUnavailable: false,
+			ocrUnavailableReason: null,
 			lowConfidence: false,
 			ocrStrategy: null,
 		};
@@ -138,6 +141,7 @@ export async function readPageText(options: {
 			ocrApplied: false,
 			ocrConfidence: 0,
 			ocrUnavailable: false,
+			ocrUnavailableReason: null,
 			lowConfidence: false,
 			ocrStrategy: null,
 		};
@@ -150,6 +154,7 @@ export async function readPageText(options: {
 			ocrApplied: false,
 			ocrConfidence: 0,
 			ocrUnavailable: true,
+			ocrUnavailableReason: "motor-indisponivel",
 			lowConfidence: false,
 			ocrStrategy: null,
 		};
@@ -159,6 +164,7 @@ export async function readPageText(options: {
 	// próprio arquivo (funciona na Vercel e no modo portátil); se a página não
 	// tiver uma imagem aproveitável — ou se a leitura dessa imagem falhar —
 	// entra o `pdftoppm` do poppler.
+	let ocrReason: OcrFailureReason | null = null;
 	for (const strategy of ["imagem-js", "poppler"] as const) {
 		let bytes: Buffer | null = null;
 		if (strategy === "imagem-js") {
@@ -178,11 +184,13 @@ export async function readPageText(options: {
 				ocrApplied: true,
 				ocrConfidence: Math.max(0, Math.min(100, Math.round(outcome.confidence))),
 				ocrUnavailable: false,
+				ocrUnavailableReason: null,
 				lowConfidence: outcome.confidence < OCR_MIN_CONFIDENCE,
 				ocrStrategy: strategy,
 			};
-		} catch {
-			// Falhou esta estratégia: tenta a próxima.
+		} catch (error) {
+			// Falhou esta estratégia: tenta a próxima (e guarda o motivo).
+			ocrReason = error instanceof OcrError ? error.reason : "leitura-falhou";
 		}
 	}
 
@@ -192,6 +200,7 @@ export async function readPageText(options: {
 		ocrApplied: false,
 		ocrConfidence: 0,
 		ocrUnavailable: true,
+		ocrUnavailableReason: ocrReason ?? "leitura-falhou",
 		lowConfidence: false,
 		ocrStrategy: null,
 	};
