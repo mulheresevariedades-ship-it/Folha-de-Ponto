@@ -175,10 +175,21 @@ lido sem instalar nada.
 - `ocrApplied: true` quando a página foi lida por OCR e `ocrUnavailable: true`
   quando nenhuma estratégia de OCR funcionou — esse campo só aparece quando
   o problema é real;
+- `ocrUnavailableReason` com o motivo da falha (`modelo-indisponivel`,
+  `tempo-limite`, `motor-indisponivel` ou `leitura-falhou`), que também vai
+  para a nota da folha gravada;
 - quando o OCR lê com **confiança baixa** (abaixo de 60), a competência não é
   aceita: a página é marcada para revisão manual, com a nota
   "Leitura por OCR com confiança baixa", em vez de arquivar um dado
   provavelmente errado.
+
+### Diagnóstico do OCR
+
+`GET /api/ocr-diagnostico` mostra a situação do OCR no servidor: se o motor
+existe, se o modelo de idioma está na máquina (e quais arquivos estão lá),
+quantos modelos estão no cache e qual foi a última falha. A resposta não
+traz caminhos de arquivo. É o primeiro lugar a olhar quando uma folha
+digitalizada não é lida.
 
 ### OCR sem internet (Vercel e modo portátil)
 

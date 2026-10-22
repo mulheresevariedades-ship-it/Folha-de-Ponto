@@ -12,7 +12,7 @@
  * assim, com limite de tempo, para não prender a requisição.
  */
 import { createWorker, type Worker } from "tesseract.js";
-import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -99,6 +99,36 @@ function configuredLanguages(): string[] {
 		.filter((item) => item.length > 0);
 }
 
+/**
+ * Procura pastas `tessdata` dentro de um diretório (até a profundidade dada).
+ *
+ * Na Vercel o modelo entra na função por `includeFiles`, que guarda os
+ * arquivos mantendo o caminho do repositório (`artifacts/api-server/dist/
+ * tessdata`); o bundle, porém, roda em `api/index.js`. Em vez de cravar
+ * esse caminho aqui, a pasta é procurada no disco.
+ */
+export function* pastasTessdata(raiz: string, profundidade: number): Generator<string> {
+	if (profundidade < 0) return;
+	let entradas: Dirent[];
+	try {
+		entradas = readdirSync(raiz, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entrada of entradas) {
+		if (!entrada.isDirectory()) continue;
+		if (entrada.name === "node_modules" || entrada.name.startsWith(".")) continue;
+		const caminho = path.join(raiz, entrada.name);
+		if (entrada.name === "tessdata") {
+			yield caminho;
+			continue;
+		}
+		yield* pastasTessdata(caminho, profundidade - 1);
+	}
+}
+
+let pastasTessdataCache: string[] | null = null;
+
 /** Pastas onde o modelo de idioma pode estar, em ordem de prioridade. */
 function candidateFolders(): string[] {
 	const candidates: string[] = [];
@@ -108,8 +138,13 @@ function candidateFolders(): string[] {
 	} catch {
 		// Bundle sem `import.meta.url`: segue com o download.
 	}
-	// Na Vercel o modelo pode ficar na raiz do programa (`/var/task/tessdata`).
+	// Na Vercel o modelo pode ficar na raiz do programa (`/var/task/tessdata`)
+	// ou no caminho que o `includeFiles` preservou.
 	candidates.push(path.join(process.cwd(), "tessdata"), path.join(process.cwd(), "static", "tessdata"));
+	// Varredura curta: acha a pasta do modelo mesmo quando o deploy a
+	// guardou em outro lugar dentro da função.
+	pastasTessdataCache ??= [...pastasTessdata(process.cwd(), 4)];
+	candidates.push(...pastasTessdataCache);
 	return candidates;
 }
 

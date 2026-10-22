@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -7,7 +9,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { extractPageRaster } from "./pdf-raster";
 import { readPageText } from "./pdf-page-text";
 import { extractPdfPageTexts } from "./pdf-text";
-import { ocrDiagnostics, recognizeImage, terminateOcr } from "./ocr";
+import { ocrDiagnostics, pastasTessdata, recognizeImage, terminateOcr } from "./ocr";
 import { competencyFromContent, matriculaFromContent, nameFromContent } from "./timesheet-files";
 
 /**
@@ -100,6 +102,23 @@ describe("OCR de PDF digitalizado", { skip: ignorar ? "desligado por PONTO_OCR_T
 			else process.env.PONTO_OCR_TIMEOUT_MS = anterior;
 			await terminateOcr();
 		}
+	});
+
+	it("acha a pasta do modelo onde o deploy a guardou", () => {
+		const raiz = mkdtempSync(path.join(tmpdir(), "ponto-tessdata-"));
+		const destino = path.join(raiz, "artifacts", "api-server", "dist", "tessdata");
+		mkdirSync(destino, { recursive: true });
+		mkdirSync(path.join(raiz, "node_modules", "algo", "tessdata"), { recursive: true });
+		const encontradas = [...pastasTessdata(raiz, 5)].map((pasta) => path.relative(raiz, pasta));
+		assert.ok(
+			encontradas.includes(path.join("artifacts", "api-server", "dist", "tessdata")),
+			`a pasta do modelo deveria ter sido encontrada: ${encontradas.join(", ")}`,
+		);
+		assert.ok(
+			!encontradas.includes(path.join("node_modules", "algo", "tessdata")),
+			"node_modules não deve ser vasculhado",
+		);
+		rmSync(raiz, { recursive: true, force: true });
 	});
 
 	it("relata a situação do OCR para o diagnóstico", () => {
