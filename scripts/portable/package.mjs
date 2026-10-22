@@ -131,6 +131,12 @@ copyDirectory(realpathSync(pgliteSource), path.join(serverDir, "node_modules", "
  * resolvíveis na pasta `node_modules` do pacote final.
  */
 const runtimePackages = ["tesseract.js"];
+/**
+ * O núcleo WASM (`tesseract.js-core`, 43 MB) não vem aqui: o runtime do OCR
+ * embarcado em `server/ocr/tesseract` já traz a cópia que o worker carrega,
+ * e é ele que o `tesseract.js` usa (o `workerPath` aponta para lá).
+ */
+const dependenciasIgnoradas = new Set(["tesseract.js-core"]);
 for (const packageName of runtimePackages) {
 	const source = path.join(repoRoot, "artifacts", "api-server", "node_modules", ...packageName.split("/"));
 	if (!existsSync(source)) {
@@ -141,7 +147,7 @@ for (const packageName of runtimePackages) {
 	copyDirectory(realSource, destination);
 
 	// Dependências irmãs do bloco do pnpm: o diretório que contém o pacote
-	// também contém suas dependências (tesseract.js-core, regenerator-runtime,
+	// também contém suas dependências (regenerator-runtime,
 	// wasm-feature-detect...). É esse diretório que precisa ser replicado.
 	const pnpmBlock = path.dirname(realSource);
 	if (existsSync(pnpmBlock)) {
@@ -150,6 +156,7 @@ for (const packageName of runtimePackages) {
 			// falso para elas, então o tipo é conferido pelo destino do link.
 			const isPackage = entry.isDirectory() || entry.isSymbolicLink();
 			if (!isPackage || entry.name === packageName) continue;
+			if (dependenciasIgnoradas.has(entry.name)) continue;
 			const dependencySource = path.join(pnpmBlock, entry.name);
 			const dependencyTarget = path.join(destination, "node_modules", entry.name);
 			if (entry.name.startsWith("@")) {
