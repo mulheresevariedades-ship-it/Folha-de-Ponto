@@ -87,6 +87,21 @@ describe("OCR de PDF digitalizado", { skip: ignorar ? "desligado por PONTO_OCR_T
 		assert.equal(matriculaFromContent(outcome.text), "12345");
 	});
 
+	it("estoura o tempo limite sem travar a requisição", async () => {
+		const anterior = process.env.PONTO_OCR_TIMEOUT_MS;
+		process.env.PONTO_OCR_TIMEOUT_MS = "1";
+		try {
+			const bytes = await readFile(path.join(fixtures, "folha-digitalizada.png"));
+			const inicio = Date.now();
+			await assert.rejects(() => recognizeImage(bytes), /Tempo limite do OCR/);
+			assert.ok(Date.now() - inicio < 30000, "o tempo limite precisa ser respeitado");
+		} finally {
+			if (anterior === undefined) delete process.env.PONTO_OCR_TIMEOUT_MS;
+			else process.env.PONTO_OCR_TIMEOUT_MS = anterior;
+			await terminateOcr();
+		}
+	});
+
 	it("lê um PDF misto: página de texto pela camada de texto e página digitalizada pelo OCR", async (t) => {
 		if (!(await ocrDisponivel())) {
 			t.skip("modelo de idioma indisponível (sem internet?)");

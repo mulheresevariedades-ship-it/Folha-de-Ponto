@@ -14,7 +14,7 @@
  *   node scripts/portable/fetch-tessdata.mjs
  *   node scripts/portable/fetch-tessdata.mjs --destino caminho/da/pasta
  */
-import { copyFile, mkdir, stat } from "node:fs/promises";
+import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { createWriteStream, existsSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -44,6 +44,14 @@ export async function fetchTessdata({
 	if (!target) throw new Error("Informe a pasta de destino dos modelos de idioma.");
 	await mkdir(target, { recursive: true });
 	if (cacheDir) await mkdir(cacheDir, { recursive: true });
+	// Um arquivo de texto garante que a pasta nunca fica vazia: ela entra no
+	// pacote da Vercel por includeFiles, e um padrão sem nenhum arquivo pode
+	// derrubar o build.
+	await writeFile(
+		path.join(target, "LEIA-ME.txt"),
+		"Modelos de idioma do OCR (tesseract.js).\n\nCopie os arquivos .traineddata.gz deste pasta para\noutro local se o OCR estiver apontando para outro caminho.\n",
+		"utf8",
+	);
 
 	const ready = [];
 	for (const language of languages) {

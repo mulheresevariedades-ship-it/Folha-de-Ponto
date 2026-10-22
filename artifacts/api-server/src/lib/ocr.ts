@@ -34,6 +34,36 @@ export const OCR_MIN_CONFIDENCE = 60;
 
 const DEFAULT_LANGUAGES = "por+eng";
 
+/**
+ * Tempo máximo de uma leitura de OCR (carregar o modelo + ler a imagem).
+ *
+ * Sem esse limite, uma rede lenta ou indisponível — o caso da Vercel
+ * baixando o modelo do CDN — prende a requisição até o servidor derrubar
+ * ela. Estourado o tempo, a página é marcada para conferência manual: é
+ * melhor do que inventar dado ou travar o lote.
+ */
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+function ocrTimeoutMs(): number {
+	const raw = Number(process.env.PONTO_OCR_TIMEOUT_MS ?? "");
+	return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
+}
+
+async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+	let timer: NodeJS.Timeout | undefined;
+	try {
+		return await Promise.race([
+			work,
+			new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(() => reject(new Error(`Tempo limite do OCR excedido (${label}).`)), ms);
+				timer.unref?.();
+			}),
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
 function configuredLanguages(): string[] {
 	const raw = process.env.PONTO_OCR_LANGUAGES ?? DEFAULT_LANGUAGES;
 	return raw
@@ -81,7 +111,7 @@ function resolveCachePath(): string {
 let activeWorker: Worker | null = null;
 let activeKey = "";
 
-async function ensureWorker(): Promise<Worker> {
+async function ensureWorker(deadline: number): Promise<Worker> {
 	const { langPath, languages } = resolveLanguageAssets();
 	const key = `${langPath ?? "cdn"}|${languages.join("+")}`;
 	if (activeWorker && activeKey === key) return activeWorker;
@@ -89,26 +119,55 @@ async function ensureWorker(): Promise<Worker> {
 		await activeWorker.terminate().catch(() => undefined);
 		activeWorker = null;
 	}
-	const worker = await createWorker(languages.join("+"), undefined, {
+	const creating = createWorker(languages.join("+"), undefined, {
 		langPath,
 		cachePath: resolveCachePath(),
 		logger: () => undefined,
 		errorHandler: () => undefined,
 	});
-	activeWorker = worker;
-	activeKey = key;
-	return worker;
+	// Se o tempo estourar enquanto o motor ainda está subindo, o worker que
+	// chegar depois é encerrado — ele não pode ficar rodando à toa.
+	let cancelado = false;
+	const vigia = creating.then((tardio) => {
+		if (cancelado) {
+			void tardio.terminate().catch(() => undefined);
+			throw new Error("Motor de OCR cancelado.");
+		}
+		return tardio;
+	});
+	try {
+		const worker = await withTimeout(vigia, Math.max(1, deadline - Date.now()), "motor de OCR");
+		activeWorker = worker;
+		activeKey = key;
+		return worker;
+	} catch (error) {
+		cancelado = true;
+		throw error;
+	}
 }
 
 /** Lê o texto de uma imagem (PNG ou JPEG). */
 export async function recognizeImage(image: Buffer): Promise<OcrOutcome> {
-	const worker = await ensureWorker();
-	const result = await worker.recognize(image);
-	const confidence = result.data.confidence;
-	return {
-		text: result.data.text ?? "",
-		confidence: Number.isFinite(confidence) ? Math.round(confidence) : 0,
-	};
+	const deadline = Date.now() + ocrTimeoutMs();
+	const worker = await ensureWorker(deadline);
+	try {
+		const result = await withTimeout(
+			worker.recognize(image),
+			Math.max(1, deadline - Date.now()),
+			"leitura da imagem",
+		);
+		const confidence = result.data.confidence;
+		return {
+			text: result.data.text ?? "",
+			confidence: Number.isFinite(confidence) ? Math.round(confidence) : 0,
+		};
+	} catch (error) {
+		// Worker travado: descarta para que a próxima página comece limpo.
+		activeWorker = null;
+		activeKey = "";
+		await worker.terminate().catch(() => undefined);
+		throw error;
+	}
 }
 
 /** Encerra o worker de OCR (usado no fim de cada lote). */
