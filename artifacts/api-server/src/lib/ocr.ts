@@ -124,7 +124,12 @@ async function ensureWorker(deadline: number): Promise<Worker> {
 		langPath,
 		cachePath: resolveCachePath(),
 		logger: () => undefined,
-		errorHandler: () => undefined,
+		errorHandler: () => {
+			// O worker falhou (ou foi congelado e morreu): o próximo OCR
+			// precisa de um worker novo.
+			activeWorker = null;
+			activeKey = "";
+		},
 	});
 	// Se o tempo estourar enquanto o motor ainda está subindo, o worker que
 	// chegar depois é encerrado — ele não pode ficar rodando à toa.
