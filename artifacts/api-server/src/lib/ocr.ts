@@ -6,9 +6,10 @@
  * da página e ele não existe na Vercel nem no modo portátil. Agora a imagem vem
  * do próprio arquivo (`pdf-raster.ts`), então o OCR funciona nos dois ambientes.
  *
- * O modelo de idioma é baixado da internet na primeira uso. No modo portátil
- * ele é copiado junto com o pacote (`tessdata/`), e o caminho local é usado
- * quando existe — assim o OCR também funciona sem internet.
+ * O modelo de idioma acompanha o programa: no modo portátil ele é copiado
+ * para `tessdata/` dentro do pacote e na Vercel o build o embaraça na
+ * função. Só quando não há modelo local a API o baixa do CDN — e, mesmo
+ * assim, com limite de tempo, para não prender a requisição.
  */
 import { createWorker, type Worker } from "tesseract.js";
 import { existsSync, mkdirSync } from "node:fs";
@@ -150,9 +151,10 @@ async function ensureWorker(deadline: number): Promise<Worker> {
 export async function recognizeImage(image: Buffer): Promise<OcrOutcome> {
 	const deadline = Date.now() + ocrTimeoutMs();
 	const worker = await ensureWorker(deadline);
+	const pending = worker.recognize(image);
 	try {
 		const result = await withTimeout(
-			worker.recognize(image),
+			pending,
 			Math.max(1, deadline - Date.now()),
 			"leitura da imagem",
 		);
@@ -162,10 +164,17 @@ export async function recognizeImage(image: Buffer): Promise<OcrOutcome> {
 			confidence: Number.isFinite(confidence) ? Math.round(confidence) : 0,
 		};
 	} catch (error) {
-		// Worker travado: descarta para que a próxima página comece limpo.
+		// O worker é "abandonado": o `tesseract.js` pode ainda estar
+		// mandando a imagem para ele. Encerrá-lo nesse instante faz a
+		// biblioteca tentar falar com um worker morto, o que vira uma
+		// rejeição não tratada e derruba o processo — o encerramento espera
+		// o trabalho pendente terminar.
 		activeWorker = null;
 		activeKey = "";
-		await worker.terminate().catch(() => undefined);
+		void pending.then(
+			() => worker.terminate().catch(() => undefined),
+			() => worker.terminate().catch(() => undefined),
+		);
 		throw error;
 	}
 }
