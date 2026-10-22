@@ -180,15 +180,28 @@ lido sem instalar nada.
   "Leitura por OCR com confiança baixa", em vez de arquivar um dado
   provavelmente errado.
 
-### OCR sem internet (modo portátil)
+### OCR sem internet (Vercel e modo portátil)
 
-O `tesseract.js` baixa o modelo de idioma (português e inglês, cerca de 4 MB)
-do CDN do projeto. O empacotador portátil (`scripts/portable/package.mjs`)
-baixa esse modelo uma vez e o coloca em `server/tessdata/`; em tempo de
-execução a API usa o modelo local quando ele existe e, não havendo internet,
-o OCR continua funcionando. Para apontar outro caminho:
-`PONTO_TESSDATA_PATH`. Para trocar os idiomas: `PONTO_OCR_LANGUAGES`
-(por exemplo `por`).
+O `tesseract.js` precisa do modelo de idioma (português e inglês, cerca de
+4 MB). Nos dois ambientes ele **entra junto do programa**, então o OCR não
+depende da internet em tempo de execução:
+
+- **Vercel**: o build roda `scripts/portable/fetch-tessdata.mjs` depois do
+  build da API e o `vercel.json` embarca `artifacts/api-server/dist/tessdata`
+  na função (`includeFiles`); em tempo de execução a API lê o modelo do
+  disco;
+- **modo portátil**: o empacotador (`scripts/portable/package.mjs`) baixa o
+  modelo uma vez e o coloca em `server/tessdata/`.
+
+Só quando o modelo não está em lugar nenhum a API o baixa do CDN. Para
+apontar outro caminho: `PONTO_TESSDATA_PATH`. Para trocar os idiomas:
+`PONTO_OCR_LANGUAGES` (por exemplo `por`).
+
+### Limite de tempo do OCR
+
+Todo OCR tem prazo (`PONTO_OCR_TIMEOUT_MS`, padrão 60 s) para carregar o
+modelo e ler a imagem. Estourado o prazo, a página é marcada para
+conferência manual — o servidor nunca fica preso esperando a rede.
 
 ## SMTP (nunca no código)
 
