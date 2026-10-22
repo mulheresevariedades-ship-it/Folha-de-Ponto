@@ -10,6 +10,7 @@ import type { OcrDiagnosticsUltimaFalha } from './ocrDiagnosticsUltimaFalha';
 
 export interface OcrDiagnostics {
   motorDisponivel: boolean;
+  workerEmbutido?: boolean;
   modeloLocal: OcrDiagnosticsModeloLocal;
   cacheModelos: number;
   /** @nullable */

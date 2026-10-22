@@ -104,7 +104,7 @@ function configuredLanguages(): string[] {
  *
  * Na Vercel o modelo entra na função por `includeFiles`, que guarda os
  * arquivos mantendo o caminho do repositório (`artifacts/api-server/dist/
- * tessdata`); o bundle, porém, roda em `api/index.js`. Em vez de cravar
+ * ocr/tessdata`); o bundle, porém, roda em `api/index.js`. Em vez de cravar
  * esse caminho aqui, a pasta é procurada no disco.
  */
 export function* pastasTessdata(raiz: string, profundidade: number): Generator<string> {
@@ -127,14 +127,79 @@ export function* pastasTessdata(raiz: string, profundidade: number): Generator<s
 	}
 }
 
+/**
+ * Procura o script do worker do OCR no disco da função.
+ *
+ * O runtime embarcado pelo build fica em `<programa>/ocr/tesseract`; o
+ * deploy pode guardá-lo em outro caminho dentro da função, então a pasta
+ * `tesseract` é procurada no disco.
+ */
+export function* pastasWorkerOcr(raiz: string, profundidade: number): Generator<string> {
+	if (profundidade < 0) return;
+	let entradas: Dirent[];
+	try {
+		entradas = readdirSync(raiz, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entrada of entradas) {
+		if (!entrada.isDirectory()) continue;
+		if (entrada.name === "node_modules" || entrada.name.startsWith(".")) continue;
+		const caminho = path.join(raiz, entrada.name);
+		if (entrada.name === "tesseract") {
+			yield caminho;
+			continue;
+		}
+		yield* pastasWorkerOcr(caminho, profundidade - 1);
+	}
+}
+
 let pastasTessdataCache: string[] | null = null;
+let pastasWorkerCache: string[] | null = null;
+
+/**
+ * Onde está o script do worker do OCR.
+ *
+ * O `tesseract.js` resolve o worker por caminho (`new Worker(workerPath)`) e
+ * o núcleo WASM por `require('tesseract.js-core/...')`. Em deploy, esses
+ * arquivos não são acompanhados pelo empacotador — o worker nunca sobe e o
+ * OCR trava até o prazo. O build copia o conjunto para
+ * `<programa>/ocr/tesseract` (`ocr-runtime.mjs`) e o OCR aponta para lá.
+ */
+export function resolveWorkerPath(): string | undefined {
+	let base: string;
+	try {
+		base = path.dirname(fileURLToPath(import.meta.url));
+	} catch {
+		return undefined;
+	}
+	const dentroDe = (pasta: string) =>
+		path.join(pasta, "node_modules", "tesseract.js", "src", "worker-script", "node", "index.js");
+	const candidatos = [
+		dentroDe(path.join(base, "ocr", "tesseract")),
+		dentroDe(path.join(base, "tesseract")),
+	];
+	for (const candidato of candidatos) {
+		if (existsSync(candidato)) return candidato;
+	}
+	// Varredura: o deploy pode ter guardado o runtime em outro caminho.
+	pastasWorkerCache ??= [...pastasWorkerOcr(process.cwd(), 5)];
+	for (const pasta of pastasWorkerCache) {
+		const candidato = dentroDe(pasta);
+		if (existsSync(candidato)) return candidato;
+	}
+	return undefined;
+}
 
 /** Pastas onde o modelo de idioma pode estar, em ordem de prioridade. */
 function candidateFolders(): string[] {
 	const candidates: string[] = [];
 	if (process.env.PONTO_TESSDATA_PATH) candidates.push(process.env.PONTO_TESSDATA_PATH);
 	try {
-		candidates.push(path.join(path.dirname(fileURLToPath(import.meta.url)), "tessdata"));
+		const base = path.dirname(fileURLToPath(import.meta.url));
+		// O modelo embarcado pelo build fica ao lado do programa, em
+		// `ocr/tessdata` (Vercel e modo portátil).
+		candidates.push(path.join(base, "ocr", "tessdata"), path.join(base, "tessdata"));
 	} catch {
 		// Bundle sem `import.meta.url`: segue com o download.
 	}
@@ -143,7 +208,7 @@ function candidateFolders(): string[] {
 	candidates.push(path.join(process.cwd(), "tessdata"), path.join(process.cwd(), "static", "tessdata"));
 	// Varredura curta: acha a pasta do modelo mesmo quando o deploy a
 	// guardou em outro lugar dentro da função.
-	pastasTessdataCache ??= [...pastasTessdata(process.cwd(), 4)];
+	pastasTessdataCache ??= [...pastasTessdata(process.cwd(), 6)];
 	candidates.push(...pastasTessdataCache);
 	return candidates;
 }
@@ -203,7 +268,7 @@ async function ensureWorker(deadline: number): Promise<Worker> {
 		await activeWorker.terminate().catch(() => undefined);
 		activeWorker = null;
 	}
-	const creating = createWorker(languages.join("+"), undefined, {
+	const opcoes: Record<string, unknown> = {
 		langPath,
 		cachePath: resolveCachePath(),
 		logger: () => undefined,
@@ -213,7 +278,12 @@ async function ensureWorker(deadline: number): Promise<Worker> {
 			activeWorker = null;
 			activeKey = "";
 		},
-	});
+	};
+	// Só quando o runtime embarcado existe: senão o `tesseract.js` usa o
+	// caminho padrão dele (o `node_modules` do servidor).
+	const workerPath = resolveWorkerPath();
+	if (workerPath) opcoes.workerPath = workerPath;
+	const creating = createWorker(languages.join("+"), undefined, opcoes);
 	// Se o tempo estourar enquanto o motor ainda está subindo, o worker que
 	// chegar depois é encerrado — ele não pode ficar rodando à toa.
 	let cancelado = false;
@@ -304,6 +374,7 @@ export function isOcrAvailable(): boolean {
  */
 export function ocrDiagnostics(): {
 	motorDisponivel: boolean;
+	workerEmbutido: boolean;
 	modeloLocal: { encontrado: boolean; idiomas: string[]; arquivos: string[]; status: string | null };
 	cache: { arquivos: string[] };
 	ultimaFalha: { reason: OcrFailureReason; message: string; at: string } | null;
@@ -335,6 +406,7 @@ export function ocrDiagnostics(): {
 	}
 	return {
 		motorDisponivel: isOcrAvailable(),
+		workerEmbutido: Boolean(resolveWorkerPath()),
 		modeloLocal: {
 			encontrado: Boolean(langPath),
 			idiomas: languages,

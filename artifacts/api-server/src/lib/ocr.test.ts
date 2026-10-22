@@ -9,7 +9,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { extractPageRaster } from "./pdf-raster";
 import { readPageText } from "./pdf-page-text";
 import { extractPdfPageTexts } from "./pdf-text";
-import { ocrDiagnostics, pastasTessdata, recognizeImage, terminateOcr } from "./ocr";
+import { ocrDiagnostics, pastasTessdata, pastasWorkerOcr, recognizeImage, terminateOcr } from "./ocr";
 import { competencyFromContent, matriculaFromContent, nameFromContent } from "./timesheet-files";
 
 /**
@@ -117,6 +117,18 @@ describe("OCR de PDF digitalizado", { skip: ignorar ? "desligado por PONTO_OCR_T
 		assert.ok(
 			!encontradas.includes(path.join("node_modules", "algo", "tessdata")),
 			"node_modules não deve ser vasculhado",
+		);
+		rmSync(raiz, { recursive: true, force: true });
+	});
+
+	it("acha o runtime do OCR onde o deploy o guardou", () => {
+		const raiz = mkdtempSync(path.join(tmpdir(), "ponto-worker-"));
+		const destino = path.join(raiz, "artifacts", "api-server", "dist", "ocr", "tesseract");
+		mkdirSync(destino, { recursive: true });
+		const encontradas = [...pastasWorkerOcr(raiz, 6)].map((pasta) => path.relative(raiz, pasta));
+		assert.ok(
+			encontradas.includes(path.join("artifacts", "api-server", "dist", "ocr", "tesseract")),
+			`o runtime do OCR deveria ter sido encontrado: ${encontradas.join(", ")}`,
 		);
 		rmSync(raiz, { recursive: true, force: true });
 	});

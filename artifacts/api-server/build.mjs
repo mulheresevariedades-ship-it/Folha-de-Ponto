@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
 import { rm } from "node:fs/promises";
+import { copyOcrRuntime } from "./ocr-runtime.mjs";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -162,6 +163,23 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  /**
+   * Runtime do OCR no pacote.
+   *
+   * O `tesseract.js` é externo no bundle: ele carrega o worker e o núcleo
+   * WASM por caminho de arquivo, e o empacotador do deploy não acompanha
+   * esses arquivos. Sem eles o worker nunca sobe e o OCR trava. A cópia
+   * deixa o runtime do OCR autossuficiente (`ocr.ts` aponta para cá).
+   */
+  const ocr = await copyOcrRuntime(distDir);
+  if (ocr.ok) {
+    console.log(
+      `runtime do OCR copiado: ${ocr.arquivos} arquivo(s), ${(ocr.bytes / 1024 / 1024).toFixed(1)} MB`,
+    );
+  } else {
+    console.warn(`runtime do OCR não copiado: ${ocr.motivo}`);
+  }
 }
 
 buildAll().catch((err) => {

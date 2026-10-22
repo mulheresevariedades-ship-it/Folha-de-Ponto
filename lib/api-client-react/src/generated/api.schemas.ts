@@ -28,6 +28,7 @@ export type OcrDiagnosticsUltimaFalha = {
 
 export interface OcrDiagnostics {
   motorDisponivel: boolean;
+  workerEmbutido?: boolean;
   modeloLocal: OcrDiagnosticsModeloLocal;
   cacheModelos: number;
   /** @nullable */

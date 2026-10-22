@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @workspace/ponto-digital run build && pnpm --filter @workspace/api-server run build && node scripts/portable/fetch-tessdata.mjs --destino artifacts/api-server/dist/tessdata --destino artifacts/ponto-digital/dist/public/tessdata",
+  "buildCommand": "pnpm --filter @workspace/ponto-digital run build && pnpm --filter @workspace/api-server run build && node scripts/portable/fetch-tessdata.mjs --destino artifacts/api-server/dist/ocr/tessdata",
   "outputDirectory": "artifacts/ponto-digital/dist/public",
   "rewrites": [
     {
@@ -12,7 +12,7 @@
   ],
   "functions": {
     "api/index.js": {
-      "includeFiles": "artifacts/api-server/dist/tessdata/**"
+      "includeFiles": "artifacts/api-server/dist/ocr/**"
     }
   },
   "build": {

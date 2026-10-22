@@ -182,7 +182,9 @@ if (runtimeDir && existsSync(runtimeDir)) {
 }
 
 log("7/7 — trazendo o modelo de idioma do OCR");
-const tessdataDir = path.join(serverDir, "tessdata");
+// O modelo fica ao lado do runtime do OCR, em `ocr/` (a mesma pasta que a
+// Vercel recebe por `includeFiles`).
+const tessdataDir = path.join(serverDir, "ocr", "tessdata");
 try {
 	const ready = await fetchTessdata({
 		target: tessdataDir,
@@ -228,8 +230,8 @@ Para fazer backup, copie a pasta "data" inteira com o sistema encerrado.
 
 Leitura de folha digitalizada (OCR)
 ------------------------------------
-O reconhecimento de PDF escaneado funciona sem internet: o modelo de idioma
-do OCR vem na subpasta "server/tessdata". Se essa pasta for removida, o
+O reconhecimento de PDF escaneado funciona sem internet: o runtime do OCR e o
+modelo de idioma vêm na subpasta "server/ocr". Se essa pasta for removida, o
 sistema passa a baixar o modelo da internet no primeiro uso.
 
 Encerrar

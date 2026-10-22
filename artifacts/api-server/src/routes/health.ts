@@ -25,6 +25,7 @@ router.get("/ocr-diagnostico", (_req, res) => {
   const diagnostico = ocrDiagnostics();
   res.json({
     motorDisponivel: diagnostico.motorDisponivel,
+    workerEmbutido: diagnostico.workerEmbutido,
     modeloLocal: diagnostico.modeloLocal,
     cacheModelos: diagnostico.cache.arquivos.length,
     ultimaFalha: diagnostico.ultimaFalha

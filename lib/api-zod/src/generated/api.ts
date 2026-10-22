@@ -23,6 +23,7 @@ export const HealthCheckResponse = zod.object({
  */
 export const GetOcrDiagnosticsResponse = zod.object({
   "motorDisponivel": zod.boolean(),
+  "workerEmbutido": zod.boolean().optional(),
   "modeloLocal": zod.object({
   "encontrado": zod.boolean().optional(),
   "idiomas": zod.array(zod.string()).optional(),

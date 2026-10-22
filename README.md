@@ -186,23 +186,31 @@ lido sem instalar nada.
 ### Diagnóstico do OCR
 
 `GET /api/ocr-diagnostico` mostra a situação do OCR no servidor: se o motor
-existe, se o modelo de idioma está na máquina (e quais arquivos estão lá),
-quantos modelos estão no cache e qual foi a última falha. A resposta não
-traz caminhos de arquivo. É o primeiro lugar a olhar quando uma folha
-digitalizada não é lida.
+existe, se o runtime do worker está embarcado (`workerEmbutido`), se o modelo
+de idioma está na máquina (e quais arquivos estão lá), quantos modelos estão
+no cache e qual foi a última falha. A resposta não traz caminhos de arquivo.
+É o primeiro lugar a olhar quando uma folha digitalizada não é lida.
 
 ### OCR sem internet (Vercel e modo portátil)
 
-O `tesseract.js` precisa do modelo de idioma (português e inglês, cerca de
-4 MB). Nos dois ambientes ele **entra junto do programa**, então o OCR não
-depende da internet em tempo de execução:
+O `tesseract.js` precisa de duas coisas em tempo de execução: o **modelo de
+idioma** (português e inglês, cerca de 4 MB) e o **runtime do motor** (o
+script do worker e o núcleo WASM, cerca de 19 MB). Nos dois ambientes eles
+**entram junto do programa**, então o OCR não depende da internet em tempo de
+execução:
 
-- **Vercel**: o build roda `scripts/portable/fetch-tessdata.mjs` depois do
-  build da API e o `vercel.json` embarca `artifacts/api-server/dist/tessdata`
-  na função (`includeFiles`); em tempo de execução a API lê o modelo do
-  disco;
-- **modo portátil**: o empacotador (`scripts/portable/package.mjs`) baixa o
-  modelo uma vez e o coloca em `server/tessdata/`.
+- **Vercel**: o build da API copia o runtime do OCR e o modelo para
+  `artifacts/api-server/dist/ocr/` e o `vercel.json` embarca essa pasta na
+  função (`includeFiles`); em tempo de execução a API lê o modelo do disco e
+  aponta o `tesseract.js` para o worker embarcado;
+- **modo portátil**: o empacotador (`scripts/portable/package.mjs`) copia o
+  runtime junto do bundle e baixa o modelo uma vez para `server/ocr/tessdata/`.
+
+O runtime embarcado importa porque o `tesseract.js` é externo no bundle: ele
+carrega o worker por caminho de arquivo (`new Worker(workerPath)`) e o
+núcleo por `require('tesseract.js-core/...')`, e nenhum dos dois é um
+`require` estático do ponto de entrada — sem a cópia, o empacotador do deploy
+não os acompanha, o worker nunca sobe e o OCR trava até o prazo.
 
 Só quando o modelo não está em lugar nenhum a API o baixa do CDN. Para
 apontar outro caminho: `PONTO_TESSDATA_PATH`. Para trocar os idiomas:

@@ -584,6 +584,7 @@ components:
       type: object
       properties:
         motorDisponivel: { type: boolean }
+        workerEmbutido: { type: boolean }
         modeloLocal:
           type: object
           properties:
