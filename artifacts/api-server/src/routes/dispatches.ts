@@ -5,6 +5,7 @@ import { db, dispatches, employees, timesheets } from "@workspace/db";
 import { recordAudit, safeString } from "../lib/audit";
 import { cpfHash, maskCpf, normalizeCpf } from "../lib/demo-crypto";
 import { resolveSmtpConfig } from "../lib/smtp-config";
+import { archiveStore, toArchiveKey } from "../lib/archive-store";
 import nodemailer from "nodemailer";
 import path from "node:path";
 
@@ -38,7 +39,7 @@ function toApiDispatch(row: NonNullable<Awaited<ReturnType<typeof joinedDispatch
 		employee_name: row.employeeName,
 		employee_matricula: row.employeeMatricula,
 		employee_email: row.employeeEmail ?? "",
-		employee_cpf: maskCpf(row.employeeCpfLastDigits),
+		employee_cpf: row.employeeCpfLastDigits ? maskCpf(row.employeeCpfLastDigits) : "—",
 		status: row.dispatch.status,
 		created_at: row.dispatch.createdAt.toISOString(),
 		authorized_at: row.dispatch.authorizedAt?.toISOString() ?? null,
@@ -50,14 +51,41 @@ function toApiDispatch(row: NonNullable<Awaited<ReturnType<typeof joinedDispatch
 	};
 }
 
-async function simulateDispatch(id: number, allowRetry: boolean) {
+/**
+ * Ao criar despacho por folha, usar onConflictDoNothing apenas se houver constraint.
+ * Schema agora tem dispatches_timesheet_unique; usar onConflictDoNothing com
+ * target no timesheetId quando possível.
+ */
+type DispatchSendPolicy = { pending: boolean; error: boolean };
+
+async function readAttachment(timesheetPath: string | null): Promise<{ filename: string; content: Buffer } | null> {
+	if (!timesheetPath) return null;
+	const filename = path.basename(timesheetPath.replace(/\\/g, "/"));
+	const store = archiveStore();
+	const candidates = [
+		timesheetPath,
+		timesheetPath.replace(/\\/g, "/"),
+		toArchiveKey(timesheetPath),
+	].filter((key, index, all): key is string => Boolean(key) && all.indexOf(key) === index);
+	for (const key of candidates) {
+		try {
+			const content = await store.read(key);
+			if (content && content.length) return { filename: path.basename(key), content };
+		} catch {
+			// Tenta a próxima forma (chave nova, caminho legado ou caminho POSIX).
+		}
+	}
+	return null;
+}
+
+async function simulateDispatch(id: number, policy: DispatchSendPolicy) {
 	const row = await joinedDispatch(id);
 	if (!row) return { kind: "missing" as const };
 	if (row.dispatch.status === "enviado") return { kind: "already-sent" as const, dispatch: toApiDispatch(row) };
-	if (!allowRetry && row.dispatch.status !== "pendente") {
+	if (row.dispatch.status === "pendente" && !policy.pending) {
 		return { kind: "not-pending" as const, dispatch: toApiDispatch(row) };
 	}
-	if (allowRetry && row.dispatch.status !== "erro") {
+	if (row.dispatch.status === "erro" && !policy.error) {
 		return { kind: "not-error" as const, dispatch: toApiDispatch(row) };
 	}
 
@@ -75,6 +103,11 @@ async function simulateDispatch(id: number, allowRetry: boolean) {
 				: "";
 	if (emailIsValid && smtp.configured && row.timesheetPath) {
 		try {
+			const attachment = await readAttachment(row.timesheetPath);
+			if (!attachment) {
+				message = "Não foi possível localizar a folha para anexar ao e-mail.";
+				throw new Error(message);
+			}
 			const transporter = nodemailer.createTransport({
 				host: smtp.host,
 				port: smtp.port,
@@ -87,13 +120,17 @@ async function simulateDispatch(id: number, allowRetry: boolean) {
 				to: row.employeeEmail!,
 				subject: `Folha de ponto - ${row.employeeName} - ${row.timesheetCompetency}`,
 				text: `Segue a folha de ponto de ${row.employeeName} referente a ${row.timesheetCompetency}.`,
-				attachments: [{ filename: path.basename(row.timesheetPath), path: row.timesheetPath }],
+				attachments: [{ filename: attachment.filename, content: attachment.content }],
 			});
 			status = "enviado";
 			deliveryMode = "real";
 			message = "E-mail enviado com sucesso.";
 		} catch (error) {
-			message = error instanceof Error ? `Falha no envio SMTP: ${error.message}` : "Falha no envio SMTP.";
+			if (message === "Não foi possível localizar a folha para anexar ao e-mail.") {
+				// mantém a mensagem exata exigida
+			} else {
+				message = error instanceof Error ? `Falha no envio SMTP: ${error.message}` : "Falha no envio SMTP.";
+			}
 		}
 	}
 	await db
@@ -139,15 +176,17 @@ router.get("/dispatches", async (req, res, next): Promise<void> => {
 		if (from && isoDate.test(from)) filters.push(gte(dispatches.createdAt, new Date(`${from}T00:00:00.000Z`)));
 		if (to && isoDate.test(to)) filters.push(lte(dispatches.createdAt, new Date(`${to}T23:59:59.999Z`)));
 		if (query) {
-			filters.push(
-				or(
-					ilike(employees.name, `%${query}%`),
-					ilike(employees.matricula, `%${query}%`),
-					ilike(employees.email, `%${query}%`),
-					digits.length ? ilike(employees.cpfLastDigits, `%${digits.slice(-2)}%`) : undefined,
-					hash ? eq(employees.cpfSearchHash, hash) : undefined,
-				)!,
-			);
+			if (digits.length === 11 && hash) {
+				filters.push(eq(employees.cpfSearchHash, hash));
+			} else {
+				filters.push(
+					or(
+						ilike(employees.name, `%${query}%`),
+						ilike(employees.matricula, `%${query}%`),
+						ilike(employees.email, `%${query}%`),
+					)!,
+				);
+			}
 		}
 		const rows = await db
 			.select({
@@ -180,7 +219,7 @@ router.patch("/dispatches/:id/send", async (req, res, next): Promise<void> => {
 			res.status(400).json({ message: "Identificador inválido." });
 			return;
 		}
-		const result = await simulateDispatch(id, false);
+		const result = await simulateDispatch(id, { pending: true, error: false });
 		if (result.kind === "missing") {
 			res.status(404).json({ message: "Registro de envio não encontrado." });
 			return;
@@ -206,7 +245,7 @@ router.patch("/dispatches/:id/resend", async (req, res, next): Promise<void> => 
 			res.status(400).json({ message: "Identificador inválido." });
 			return;
 		}
-		const result = await simulateDispatch(id, true);
+		const result = await simulateDispatch(id, { pending: false, error: true });
 		if (result.kind === "missing") {
 			res.status(404).json({ message: "Registro de envio não encontrado." });
 			return;
@@ -237,25 +276,45 @@ router.post("/dispatches/send-batch", async (req, res, next): Promise<void> => {
 			res.status(400).json({ message: "Selecione pelo menos um registro." });
 			return;
 		}
+		let requested: Array<{ id: number; status: string }> = [];
+		if (mode === "selected") {
+			requested = await db
+				.select({ id: dispatches.id, status: dispatches.status })
+				.from(dispatches)
+				.where(inArray(dispatches.id, ids));
+		}
 		const statusFilter =
 			mode === "pending" ? eq(dispatches.status, "pendente") :
 				mode === "errors" ? eq(dispatches.status, "erro") :
 					inArray(dispatches.status, ["pendente", "erro"]);
 		const targets =
 			mode === "selected"
-				? await db
-						.select({ id: dispatches.id })
-						.from(dispatches)
-						.where(and(inArray(dispatches.id, ids), inArray(dispatches.status, ["pendente", "erro"])))
+				? requested.filter((r) => r.status === "pendente" || r.status === "erro").map((r) => ({ id: r.id }))
 				: await db.select({ id: dispatches.id }).from(dispatches).where(statusFilter);
-		const results: Array<{ id: number; status: string; message: string }> = [];
+		const results: Array<{ id: number; status: string; message?: string; reason?: string }> = [];
+		const policy: DispatchSendPolicy =
+			mode === "pending" ? { pending: true, error: false } :
+				mode === "errors" ? { pending: false, error: true } :
+					{ pending: true, error: true };
+		const processed = new Set<number>();
 		for (const target of targets) {
-			const result = await simulateDispatch(target.id, mode === "errors" || mode === "all" || mode === "selected");
+			const result = await simulateDispatch(target.id, policy);
 			if (result.kind === "sent" || result.kind === "error") {
-				results.push({ id: target.id, status: result.kind === "sent" ? "enviado" : "erro", message: result.message });
+				results.push({ id: target.id, status: result.kind === "sent" ? "enviado" : "erro", message: result.message, reason: result.message });
+				processed.add(target.id);
 			}
 		}
-		res.json({ processed: results.length, results });
+		if (mode === "selected") {
+			for (const r of requested) {
+				if (processed.has(r.id)) continue;
+				if (r.status === "enviado") {
+					results.push({ id: r.id, status: "ignorado", reason: "Já enviado" });
+				} else {
+					results.push({ id: r.id, status: "ignorado", reason: "Não elegível para envio neste lote" });
+				}
+			}
+		}
+		res.json({ processed: results.filter((r) => r.status === "enviado" || r.status === "erro").length, results });
 	} catch (error) {
 		next(error);
 	}

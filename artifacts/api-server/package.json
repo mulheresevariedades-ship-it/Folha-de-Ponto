@@ -8,12 +8,13 @@
     "demo": "tsx src/demo.ts",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "test": "tsx --test src/lib/timesheet-files.test.ts src/lib/file-validation.test.ts src/lib/archive-store.test.ts src/lib/pdf-text.test.ts src/lib/db-errors.test.ts src/lib/pdf-raster.test.ts src/lib/pdf-page-text.test.ts src/lib/ocr.test.ts",
+    "test": "tsx --test src/lib/timesheet-files.test.ts src/lib/file-validation.test.ts src/lib/archive-store.test.ts src/lib/pdf-text.test.ts src/lib/db-errors.test.ts src/lib/pdf-raster.test.ts src/lib/pdf-page-text.test.ts src/lib/ocr.test.ts src/lib/timesheet-pdf.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1154.0",
     "@electric-sql/pglite": "^0.5.9",
+    "@hyzyla/pdfium": "3.0.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",

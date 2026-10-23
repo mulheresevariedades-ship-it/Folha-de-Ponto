@@ -66,6 +66,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardMetrics"
+  /competencies:
+    get:
+      operationId: listCompetencies
+      tags: [operations]
+      summary: Competências com folhas arquivadas
+      responses:
+        "200":
+          description: Competências existentes, com a quantidade de folhas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CompetencySummary" }
   /timesheets:
     get:
       operationId: listTimesheets
@@ -81,14 +94,47 @@ paths:
         - name: q
           in: query
           schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
           description: Folhas encontradas
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/Timesheet" }
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Timesheet" }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+                required: [items, total, limit, offset]
+  /timesheets/missing:
+    get:
+      operationId: listMissingTimesheets
+      tags: [operations]
+      summary: Lista servidores ativos sem folha na competência
+      parameters:
+        - name: competency
+          in: query
+          required: true
+          schema: { type: string, example: "2026-09" }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Servidores sem folha
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissingTimesheetList" }
+        "400": { description: Competência ausente ou inválida }
   /timesheets/{id}:
     get:
       operationId: getTimesheet
@@ -127,7 +173,7 @@ paths:
     get:
       operationId: getTimesheetFile
       tags: [operations]
-      summary: Abre o PDF de demonstração
+      summary: Abre o PDF arquivado (inline; `?download=1` envia como anexo)
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -141,7 +187,7 @@ paths:
     get:
       operationId: generateTimesheet
       tags: [operations]
-      summary: Gera folha DOCX com os dias especiais do calendário
+      summary: Gera a folha de ponto em PDF com os dias especiais do calendário
       parameters:
         - name: employeeId
           in: query
@@ -153,10 +199,11 @@ paths:
           schema: { type: string }
       responses:
         "200":
-          description: Documento DOCX
+          description: Folha de ponto em PDF
           content:
-            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            application/pdf:
               schema: { type: string, format: binary }
+        "400": { description: Servidor ou competência inválidos }
         "404": { description: Servidor não encontrado }
   /batches/preview:
     post:
@@ -205,14 +252,30 @@ paths:
         - name: q
           in: query
           schema: { type: string }
+        - name: includeInactive
+          in: query
+          schema: { type: boolean, default: false }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
           description: Servidores encontrados
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/Employee" }
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Employee" }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+                required: [items, total, limit, offset]
     post:
       operationId: createEmployee
       tags: [employees]
@@ -257,6 +320,20 @@ paths:
       responses:
         "204": { description: Servidor desativado }
         "404": { description: Servidor não encontrado }
+  /employees/{id}/reactivate:
+    post:
+      operationId: reactivateEmployee
+      tags: [employees]
+      summary: Reativa um servidor inativo
+      parameters:
+        - $ref: "#/components/parameters/NumericId"
+      responses:
+        "200":
+          description: Servidor reativado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Employee" }
+        "404": { description: Servidor inativo não encontrado }
   /employees/import/preview:
     post:
       operationId: previewEmployeeImport
@@ -467,14 +544,27 @@ paths:
         - name: q
           in: query
           schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
           description: Eventos encontrados
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/AuditEvent" }
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEvent" }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+                required: [items, total, limit, offset]
   /settings/smtp:
     get:
       operationId: getSmtpSettings
@@ -629,7 +719,20 @@ components:
         reviewed_at: { type: [string, "null"], format: date-time }
         note: { type: [string, "null"] }
         file_url: { type: [string, "null"] }
+        file_name: { type: [string, "null"], description: Nome oficial do PDF arquivado }
+        competency_source:
+          type: [string, "null"]
+          enum: [conteudo-pdf, ocr-conteudo-pdf, fallback, nao-identificada, null]
+          description: Origem da competência detectada no PDF
+        ocr_applied: { type: boolean }
+        ocr_unavailable: { type: boolean }
       required: [id, name, matricula, competencia, confidence, status, status_label, reviewed_at]
+    CompetencySummary:
+      type: object
+      properties:
+        competency: { type: string }
+        count: { type: integer }
+      required: [competency, count]
     TimesheetReviewInput:
       type: object
       properties:
@@ -650,7 +753,28 @@ components:
         cargo: { type: string }
         carga_horaria: { type: integer }
         acumula: { type: boolean }
-      required: [id, name, matricula, cpf, email, cargo, carga_horaria, acumula]
+        active: { type: boolean }
+      required: [id, name, matricula, cpf, email, cargo, carga_horaria, acumula, active]
+    MissingTimesheet:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        matricula: { type: string }
+        email: { type: [string, "null"] }
+        cpf: { type: string }
+        competency: { type: string }
+        status: { type: string, enum: [faltante] }
+      required: [id, name, matricula, email, cpf, competency, status]
+    MissingTimesheetList:
+      type: object
+      properties:
+        competency: { type: string }
+        total: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MissingTimesheet" }
+      required: [competency, total, items]
     EmployeeInput:
       type: object
       properties:
@@ -737,13 +861,14 @@ components:
         ocrUnavailable: { type: boolean, description: Nenhuma estratégia de OCR funcionou nesta página }
         ocrUnavailableReason:
           type: [string, "null"]
-          enum: [modelo-indisponivel, tempo-limite, motor-indisponivel, leitura-falhou, null]
+          enum: [modelo-indisponivel, tempo-limite, motor-indisponivel, leitura-falhou, formato-imagem-nao-suportado, null]
           description: Por que o OCR não conseguiu ler a página
+        ocrUnavailableDetail: { type: [string, "null"], description: "Detalhe técnico da falha (ex.: filtro /JBIG2Decode)" }
         duplicate: { type: boolean }
         duplicateInUpload: { type: boolean }
         duplicateReason: { type: [string, "null"] }
         needsReview: { type: boolean }
-      required: [sourceFilename, pageNumber, name, matricula, competency, competencyDetected, competencySource, ocrApplied, ocrUnavailable, ocrUnavailableReason, confidence, duplicate, duplicateInUpload, duplicateReason, needsReview]
+      required: [sourceFilename, pageNumber, name, matricula, competency, competencyDetected, competencySource, ocrApplied, ocrUnavailable, ocrUnavailableReason, ocrUnavailableDetail, confidence, duplicate, duplicateInUpload, duplicateReason, needsReview]
     BatchError:
       type: object
       properties:
@@ -863,20 +988,31 @@ components:
               id: { type: integer }
               status: { type: string }
               message: { type: string }
-            required: [id, status, message]
+              reason: { type: string }
+            required: [id, status]
       required: [processed, results]
     AuditEvent:
       type: object
       properties:
         id: { type: string }
+        action: { type: string }
+        entity_type: { type: string }
+        entity_id: { type: string }
+        created_at: { type: string, format: date-time }
+        date: { type: string, format: date-time }
+        actor_name: { type: [string, "null"] }
+        actor_email: { type: [string, "null"] }
         name: { type: string }
         matricula: { type: string }
         cpf: { type: string }
-        action: { type: string }
-        status: { type: string }
-        competencia: { type: string }
-        date: { type: string, format: date-time }
-      required: [id, name, matricula, cpf, action, status, competencia, date]
+        email: { type: [string, "null"] }
+        file_name: { type: [string, "null"] }
+        delivery_mode: { type: [string, "null"] }
+        smtp_source: { type: [string, "null"] }
+        message: { type: [string, "null"] }
+        status: { type: [string, "null"] }
+        competencia: { type: [string, "null"] }
+      required: [id, action, entity_type, entity_id, created_at, date, actor_name, actor_email, name, matricula, cpf, email, file_name, delivery_mode, smtp_source, message, status, competencia]
     SmtpSettings:
       type: object
       properties:

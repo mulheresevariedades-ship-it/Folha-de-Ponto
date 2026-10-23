@@ -1,10 +1,30 @@
-import { desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
-import { auditEvents, db, dispatches, employees, timesheets } from "@workspace/db";
+import { auditEvents, db, dispatches, employees, timesheets, users } from "@workspace/db";
 import { safeString } from "../lib/audit";
 import { cpfHash, maskCpf, normalizeCpf } from "../lib/demo-crypto";
 
 const router: IRouter = Router();
+
+/**
+ * Competências com material arquivado.
+ *
+ * A navegação da interface não pode depender do mês corrente: o arquivo é
+ * histórico e podem existir folhas de meses futuros (2027-01, por exemplo).
+ * A lista vem do banco, em ordem decrescente, com a quantidade de folhas.
+ */
+router.get("/competencies", async (_req, res, next): Promise<void> => {
+	try {
+		const rows = await db
+			.select({ competency: timesheets.competency, count: count() })
+			.from(timesheets)
+			.groupBy(timesheets.competency)
+			.orderBy(desc(timesheets.competency));
+		res.json(rows.map((row) => ({ competency: row.competency, count: Number(row.count) })));
+	} catch (error) {
+		next(error);
+	}
+});
 
 function currentCompetency(): string {
 	const now = new Date();
@@ -51,17 +71,19 @@ router.get("/audit", async (req, res, next): Promise<void> => {
 		const query = safeString(req.query.q);
 		const digits = normalizeCpf(query);
 		const cpfDigest = digits.length === 11 ? cpfHash(digits) : null;
+		const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+		const offset = Math.max(0, Number(req.query.offset) || 0);
 		const matches = query
 			? await db
 					.select({ id: employees.id, name: employees.name, matricula: employees.matricula, cpfLastDigits: employees.cpfLastDigits })
 					.from(employees)
 					.where(
-						or(
-							ilike(employees.name, `%${query}%`),
-							ilike(employees.matricula, `%${query}%`),
-							digits.length > 0 ? ilike(employees.cpfLastDigits, `%${digits.slice(-2)}%`) : undefined,
-							cpfDigest ? eq(employees.cpfSearchHash, cpfDigest) : undefined,
-						),
+						digits.length === 11 && cpfDigest
+							? eq(employees.cpfSearchHash, cpfDigest)
+							: or(
+									ilike(employees.name, `%${query}%`),
+									ilike(employees.matricula, `%${query}%`),
+								),
 					)
 			: [];
 		const employeeIds = matches.map((employee) => employee.id);
@@ -76,11 +98,11 @@ router.get("/audit", async (req, res, next): Promise<void> => {
 			...relatedSheets.map((row) => row.id),
 			...relatedDispatches.map((row) => String(row.id)),
 		]);
-		const events = await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(500);
+		const allEvents = await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt));
 		const lower = query.toLocaleLowerCase("pt-BR");
 		const filtered = query
-			? events.filter((event) => {
-					const metadata = event.metadata ?? {};
+			? allEvents.filter((event) => {
+					const metadata = (event.metadata && typeof event.metadata === "object" ? event.metadata : {}) as Record<string, unknown>;
 					const fields = [
 						event.action,
 						event.entityType,
@@ -89,30 +111,46 @@ router.get("/audit", async (req, res, next): Promise<void> => {
 						String(metadata.matricula ?? ""),
 						String(metadata.competency ?? metadata.competencia ?? ""),
 						String(metadata.status ?? ""),
+						String(metadata.email ?? ""),
 					].join(" ").toLocaleLowerCase("pt-BR");
 					return searchableEntityIds.has(event.entityId) || fields.includes(lower);
 				})
-			: events;
-		res.json(
-			filtered.slice(0, 200).map((event) => {
-				const metadata = event.metadata ?? {};
-				const matchingEmployee = matches.find((employee) => String(employee.id) === event.entityId);
+			: allEvents;
+		const items = filtered.slice(offset, offset + limit);
+		const usersRows = await db.select({ id: users.id, name: users.name, email: users.email }).from(users);
+		const userMap = new Map(usersRows.map((user) => [user.id, user]));
+		res.json({
+			items: items.map((event) => {
+				const metadata = (event.metadata && typeof event.metadata === "object" ? event.metadata : {}) as Record<string, unknown>;
+				const matchingEmployee = matches.find((employee) => String(employee.id) === event.entityId) || matches.find((employee) => event.userId !== null && String(employee.id) === String(event.userId));
+				const actor = event.userId ? userMap.get(event.userId) : null;
+				const cpfFromMeta = safeString(metadata.cpfLastDigits) || safeString(metadata.cpf);
+				const cpfDigits = normalizeCpf(cpfFromMeta);
 				return {
 					id: String(event.id),
-					name: safeString(metadata.name) || matchingEmployee?.name || "",
-					matricula: safeString(metadata.matricula) || matchingEmployee?.matricula || "",
-					cpf: maskCpf(
-						safeString(metadata.cpfLastDigits) ||
-							matchingEmployee?.cpfLastDigits ||
-							null,
-					),
 					action: event.action,
-					status: safeString(metadata.status),
-					competencia: safeString(metadata.competency ?? metadata.competencia),
+					entity_type: event.entityType,
+					entity_id: event.entityId,
+					created_at: event.createdAt.toISOString(),
 					date: event.createdAt.toISOString(),
+					actor_name: actor?.name ?? null,
+					actor_email: actor?.email ?? null,
+					cpf: cpfDigits.length === 11 ? maskCpf(cpfDigits) : cpfFromMeta ? maskCpf(cpfFromMeta) : (matchingEmployee?.cpfLastDigits ? maskCpf(matchingEmployee.cpfLastDigits) : "—"),
+					name: safeString(metadata.name) || matchingEmployee?.name || actor?.name || "—",
+					matricula: safeString(metadata.matricula) || matchingEmployee?.matricula || "—",
+					email: safeString(metadata.email) || actor?.email || null,
+					file_name: safeString(metadata.fileName) || safeString(metadata.filename) || null,
+					delivery_mode: safeString(metadata.deliveryMode) || null,
+					smtp_source: safeString(metadata.smtpSource) || null,
+					message: safeString(metadata.message) || null,
+					competencia: safeString(metadata.competency ?? metadata.competencia) || null,
+					status: safeString(metadata.status) || null,
 				};
 			}),
-		);
+			total: filtered.length,
+			limit,
+			offset,
+		});
 	} catch (error) {
 		next(error);
 	}
