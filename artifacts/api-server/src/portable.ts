@@ -141,6 +141,20 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"] as const) {
 }
 
 /**
+ * Encerramento ordenado pedido pelo aplicativo desktop (`desktop/launcher.js`).
+ *
+ * No modo portátil clássico (`Iniciar-Ponto.bat`) não existe canal IPC e este
+ * evento nunca dispara; o comportamento continua o mesmo. No aplicativo
+ * instalado, fechar a janela fecha o banco e libera a trava antes de sair, em
+ * vez de depender do encerramento abrupto do processo.
+ */
+process.on("message", (message) => {
+	if (message && typeof message === "object" && (message as { type?: unknown }).type === "shutdown") {
+		void shutdown("ipc");
+	}
+});
+
+/**
  * Libera a trava de forma síncrona antes de o processo morrer.
  *
  * No Windows o encerramento do console (Ctrl+C no `.bat`, fechar a janela) não

@@ -59,6 +59,10 @@ Thumbs.db
 /data/SESSION_SECRET.txt
 /dist-portable/
 
+# Aplicativo desktop: saídas do electron-builder (nunca versionadas).
+/dist-installer/
+/dist-desktop/
+
 # Local environment files (contain real credentials, never commit)
 .env
 .env.*

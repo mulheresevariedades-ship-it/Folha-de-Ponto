@@ -57,12 +57,14 @@ nenhum banco: um PostgreSQL embutido (PGlite) grava os dados em arquivo, na
 pasta `data/`.
 
 ```powershell
-pnpm --filter @workspace/api-server run build
-node scripts\portable\package.mjs --runtime "C:\Program Files\nodejs"
+pnpm build:portable
 ```
 
 O comando gera a pasta `dist-portable/` com a API, a interface, o banco
-embutido e o runtime do Node. Basta dar duplo clique em `Iniciar-Ponto.bat`: o
+embutido, o OCR e o runtime do Node (baixado uma única vez no build e guardado
+em `node_modules/.cache`). Sem internet no build? Aponte um Node 24 já
+instalado: `node scripts\portable\package.mjs --runtime "C:\Program Files\nodejs"`.
+Basta dar duplo clique em `Iniciar-Ponto.bat`: o
 sistema sobe em uma única porta e as demais estações da rede abrem apenas o
 navegador no endereço mostrado.
 
@@ -98,6 +100,69 @@ lease de 30 s da sessão (liberado automaticamente ao abandonar; consultas não
 são bloqueadas) e, enquanto outro usuário estiver gravando, a interface exibe
 "Sistema em uso por outro usuário. Aguarde a conclusão da operação antes de
 salvar novas alterações."
+
+## Instalador Windows (aplicativo desktop)
+
+Para entregar o sistema a quem não usa terminal, gere o instalador:
+
+```powershell
+pnpm build:installer
+```
+
+Saída: `dist-installer/Ponto-Digital-Setup-1.0.0.exe`. O comando é completo:
+compila interface e API, monta o pacote portátil (mesmo `portable.mjs`, mesmo
+banco PGlite, mesmo OCR sem Poppler), confere se worker/WASM/modelos `por` e
+`eng` e o runtime do Node estão presentes e chama o electron-builder (NSIS).
+Nada precisa ser copiado à mão. Para testar sem instalar, `pnpm build:desktop`
+gera `dist-desktop/win-unpacked/Ponto Digital.exe`.
+
+O aplicativo não reimplementa a interface: ele inicia o backend portátil numa
+porta livre e abre a interface numa janela própria.
+
+| Item | Local |
+| --- | --- |
+| Programa (instalação por usuário, sem UAC) | `%LOCALAPPDATA%\Programs\Ponto Digital` |
+| Dados (banco, PDFs, `SESSION_SECRET`) | `%LOCALAPPDATA%\PontoDigital\data` |
+| Log de inicialização | `%LOCALAPPDATA%\PontoDigital\logs\launcher.log` |
+| Estado do servidor (porta/PID) | `%LOCALAPPDATA%\PontoDigital\state\server.json` |
+
+- **Porta:** tenta 8080–8084; se estiverem ocupadas, usa uma porta livre do
+  sistema. Antes de iniciar, verifica `/api/healthz` + o título da interface
+  para reaproveitar um servidor já em execução (clique duplo no atalho não abre
+  duas instâncias do backend).
+- **Fechamento:** fechar a janela encerra o backend de forma ordenada (fecha o
+  banco e libera a trava). Se o processo morrer à força, a próxima abertura
+  recupera a trava sozinha — o mesmo mecanismo do modo portátil.
+- **Pasta de rede:** crie `%LOCALAPPDATA%\PontoDigital\config.json` com
+  `{"dataDir": "\\\\servidor\\compartilhamento\\ponto"}` (ou defina
+  `PONTO_DATA_DIR`). O lock de estação única continua valendo.
+- **Desinstalar** remove programa e atalhos e **preserva os dados**; para
+  backup, copie a pasta `data` com o sistema fechado.
+- **Ícone:** a fonte é `assets/icon.png`; gere de novo com `pnpm build:icon`
+  (o electron-builder converte para `.ico` no executável, atalhos e
+  instalador). Para usar o logo oficial, substitua o PNG e rode o build.
+- **Requisitos de build:** Node 24 na máquina de build e internet apenas para
+  baixar Electron/NSIS/Node embutido/modelos de OCR na primeira vez. A máquina
+  de destino não precisa de nada disso.
+- **Build em máquina corporativa com App Control/WDAC:** executáveis sem
+  assinatura são bloqueados, inclusive o stub que o electron-builder executa
+  para pré-assinar o desinstalador. Nesse caso o `pnpm build:installer` repete a
+  etapa com um script NSIS derivado do template do electron-builder (os includes
+  são embutidos no arquivo): o desinstalador é gravado no momento da instalação
+  (`WriteUninstaller`) e remove atalhos, pasta do programa e registro de
+  desinstalação, preservando os dados em `%LOCALAPPDATA%\PontoDigital`. O
+  electron-builder avisa que o desinstalador não foi assinado; o arquivo
+  distribuído é o instalador.
+- **Assinatura de código:** o `.exe` sai sem assinatura (SmartScreen avisa na
+  primeira execução). Para entregar assinado, use o workflow
+  `Instalador Windows` do GitHub Actions (gera o artefato `Ponto-Digital-Setup`
+  e o anexa na release quando a tag é `v*`) ou assine com `signtool` e um
+  certificado de code signing antes de distribuir. No workflow, configure os
+  secrets `CSC_LINK` (`.pfx` em base64 ou URL) e `CSC_KEY_PASSWORD`; a etapa
+  "Conferir instalador e assinatura" falha se o segredo existir e o arquivo não
+  estiver assinado de verdade.
+- O modo portátil clássico (`Iniciar-Ponto.bat`) e o deploy na Vercel não
+  mudam; o instalador usa exatamente o mesmo pacote.
 
 ## Arquivo permanente em bucket (S3/R2)
 

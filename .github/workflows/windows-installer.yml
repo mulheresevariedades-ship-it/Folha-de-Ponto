@@ -1,0 +1,81 @@
+name: Instalador Windows
+
+# O instalador precisa de um Windows completo (NSIS + electron-builder). Rodar
+# aqui também evita depender da máquina de quem desenvolve e, principalmente,
+# permite assinar o executável depois com um certificado de code signing.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  instalar:
+    name: Gerar Ponto-Digital-Setup.exe
+    runs-on: windows-latest
+    env:
+      # Assinatura de código: sem estes secrets o electron-builder gera o
+      # instalador sem assinatura (SmartScreen avisa na primeira execução).
+      # CSC_LINK aceita o .pfx em base64 ou uma URL; CSC_KEY_PASSWORD é a senha.
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Cache do Electron e do runtime embutido
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            node_modules\.cache\node-runtime
+          key: ${{ runner.os }}-desktop-${{ hashFiles('desktop/package.json', 'scripts/portable/node-runtime.mjs') }}
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Testes do launcher
+        run: pnpm --filter @workspace/desktop test
+
+      - name: Testes da API
+        run: pnpm --filter @workspace/api-server test
+
+      - name: Gerar instalador
+        run: pnpm build:installer
+
+      - name: Conferir instalador e assinatura
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist-installer/Ponto-Digital-Setup-*.exe | Select-Object -First 1
+          if (-not $exe) { throw "Instalador nao encontrado em dist-installer" }
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          "Arquivo: {0} ({1:N1} MB)" -f $exe.Name, ($exe.Length / 1MB)
+          "Assinatura: {0}" -f $sig.Status
+          if ($sig.SignerCertificate) { "Assinado por: {0}" -f $sig.SignerCertificate.Subject }
+          if ($env:CSC_LINK -and $sig.Status -ne "Valid") {
+            throw "Instalador deveria estar assinado, mas a assinatura esta $($sig.Status)"
+          }
+
+      - name: Publicar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ponto-Digital-Setup
+          path: dist-installer/Ponto-Digital-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Anexar à release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-installer/Ponto-Digital-Setup-*.exe

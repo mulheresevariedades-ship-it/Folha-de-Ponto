@@ -1,0 +1,69 @@
+{
+  "name": "@workspace/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplicativo desktop do Ponto Digital (Windows)",
+  "author": "DIGEP - Universidade Federal",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test launcher.test.js",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "br.edu.undf.pontodigital",
+    "productName": "Ponto Digital",
+    "copyright": "Copyright © 2026 DIGEP",
+    "directories": {
+      "output": "../dist-installer",
+      "buildResources": "../assets"
+    },
+    "files": [
+      "main.js",
+      "launcher.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist-portable",
+        "to": "portable",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../assets/icon.png",
+        "to": "app-icon.png"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "../assets/icon.png",
+      "artifactName": "Ponto-Digital-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ponto Digital",
+      "uninstallDisplayName": "Ponto Digital",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

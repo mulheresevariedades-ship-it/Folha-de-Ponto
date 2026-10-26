@@ -16,14 +16,16 @@
  *   node scripts/portable/package.mjs
  *   node scripts/portable/package.mjs --runtime "C:\caminho\para\node"
  *
- * Sem `--runtime`, procura o Node atual e o `NODE_PORTABLE_RUNTIME`; se não
- * achar, o pacote sai sem o runtime e depende do Node instalado na estação.
+ * O runtime do Node é embutido automaticamente: usa `--runtime` (ou
+ * `NODE_PORTABLE_RUNTIME`) quando informado e, sem eles, baixa uma vez o Node
+ * oficial para `node_modules/.cache/node-runtime` (ver `node-runtime.mjs`).
  */
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchTessdata } from "./fetch-tessdata.mjs";
+import { ensureNodeRuntime } from "./node-runtime.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..");
@@ -180,13 +182,13 @@ log("5/7 — copiando o inicializador");
 copyFileSync(path.join(scriptDir, "Iniciar-Ponto.bat"), path.join(outputDir, "Iniciar-Ponto.bat"));
 
 log("6/7 — embutindo o runtime do Node");
-const runtimeDir = resolveRuntimeDir();
-if (runtimeDir && existsSync(runtimeDir)) {
-	copyDirectory(runtimeDir, path.join(outputDir, "runtime"));
-	log(`   runtime embutido de ${runtimeDir}`);
-} else {
-	log("   runtime não informado — o pacote usará o Node instalado na estação");
-}
+const runtime = await ensureNodeRuntime({
+	targetDir: path.join(outputDir, "runtime"),
+	cacheDir: path.join(repoRoot, "node_modules", ".cache", "node-runtime"),
+	configured: resolveRuntimeDir(),
+	log,
+});
+log(`   runtime ${runtime.version} (${runtime.source})`);
 
 log("7/7 — trazendo o modelo de idioma do OCR");
 // O modelo fica ao lado do runtime do OCR, em `ocr/` (a mesma pasta que a

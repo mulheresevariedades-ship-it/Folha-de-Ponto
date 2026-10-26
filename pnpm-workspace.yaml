@@ -39,6 +39,7 @@ packages:
   - lib/*
   - lib/integrations/*
   - scripts
+  - desktop
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.21
@@ -73,6 +74,9 @@ onlyBuiltDependencies:
   - esbuild
   - msw
   - unrs-resolver
+  # Binário do Electron: sem o postinstall, `electron .` não abre e o
+  # electron-builder não encontra o runtime para empacotar.
+  - electron
 
 overrides:
   # replit uses linux-x64 only, we can exclude all other platforms
