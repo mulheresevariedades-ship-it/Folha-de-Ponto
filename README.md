@@ -1,5 +1,100 @@
 # Folha-de-Ponto
 
+## Baixar e usar no Windows (passo a passo)
+
+Esta é a forma mais simples de testar em casa. **Você não precisa de Git, Node
+nem terminal** — o instalador pronto fica na página de Releases do GitHub (o Git
+guarda apenas o código-fonte).
+
+### 1. Baixar os arquivos
+
+1. Abra: https://github.com/mulheresevariedades-ship-it/Folha-de-Ponto/releases/latest
+2. Na seção **Assets**, baixe os três arquivos:
+   - `Ponto-Digital-Setup-1.0.0.exe` — instalador (~161 MB)
+   - `Ponto-Digital-teste.cer` — certificado de teste
+   - `Ponto-Digital-Setup-1.0.0.exe.sha256` — hash para conferir o download
+3. Deixe os três na pasta `Downloads`.
+
+### 2. Conferir o download (recomendado)
+
+Abra o PowerShell e rode:
+
+```powershell
+$sha = (Get-Content "$env:USERPROFILE\Downloads\Ponto-Digital-Setup-1.0.0.exe.sha256").Split()[0]
+(Get-FileHash "$env:USERPROFILE\Downloads\Ponto-Digital-Setup-1.0.0.exe" -Algorithm SHA256).Hash.ToLower() -eq $sha
+```
+
+O resultado deve ser `True`. O hash esperado é:
+
+```text
+0ea13b59c009da6003788ea3934aec9e7212ae6bc99787046bd0e5591cd9df5e
+```
+
+### 3. Confiar no certificado de teste (opcional)
+
+O instalador é assinado com um certificado **de teste** (não é de uma autoridade
+certificadora). Sem instalar o `.cer`, o Windows mostra "editor desconhecido".
+
+1. Dê duplo clique em `Ponto-Digital-teste.cer`.
+2. **Instalar Certificado** → **Usuário atual** → **Avançar**.
+3. Marque **Colocar todos os certificados no repositório a seguir** → **Procurar**.
+4. Escolha **Autoridades de Certificação Raiz Confiáveis** → **OK** → **Avançar** → **Concluir**.
+5. Confirme o aviso de segurança.
+6. (Opcional) Repita o processo escolhendo **Editores Confiáveis**.
+
+Só faça isso se baixou os arquivos do link oficial acima. Esse certificado serve
+apenas para esta versão de teste.
+
+### 4. Instalar
+
+1. Dê duplo clique em `Ponto-Digital-Setup-1.0.0.exe`.
+2. Se aparecer **"O Windows protegeu o computador"**, clique em **Mais informações** → **Executar assim mesmo**.
+3. A instalação é **por usuário** e não pede senha de administrador. Pode manter a pasta sugerida.
+4. Ao terminar, o app abre sozinho. Se não abrir, use o atalho **Ponto Digital**.
+
+### 5. Usar
+
+- Atalho **Ponto Digital** na Área de Trabalho e no Menu Iniciar.
+- A primeira abertura leva alguns segundos (tela de splash).
+- Feche a janela para encerrar; o backend para junto e libera o banco.
+- Funciona **offline**: banco local, OCR e PDF não dependem de internet.
+- Dados: `%LOCALAPPDATA%\PontoDigital\data`
+- Logs: `%LOCALAPPDATA%\PontoDigital\logs\launcher.log`
+
+### 6. Desinstalar
+
+**Configurações → Aplicativos → Ponto Digital → Desinstalar**.
+Os dados em `%LOCALAPPDATA%\PontoDigital\data` são preservados; apague a pasta
+manualmente se quiser remover tudo.
+
+### Se algo não funcionar
+
+| Sintoma | O que fazer |
+| --- | --- |
+| "O Windows protegeu o computador" | **Mais informações** → **Executar assim mesmo** |
+| "Editor desconhecido" | Instale o `.cer` (passo 3) ou prossiga |
+| "Acesso negado" ou "bloqueado por política" | Política corporativa (WDAC/App Control). Teste em outro PC ou peça liberação ao TI |
+| Smart App Control bloqueia o app | O Windows pode impedir apps sem reputação. Teste em outro PC ou avalie desativar o Smart App Control (não é possível reativar sem reinstalar o Windows) |
+| Antivírus reclama do instalador | Versão de teste com certificado interno; permita o arquivo |
+| App não abre | Veja `%LOCALAPPDATA%\PontoDigital\logs\launcher.log` |
+| Porta ocupada | O app tenta 8080–8084 e depois uma porta livre automaticamente |
+
+### Baixar pelo Git (opcional, para desenvolvedores)
+
+O Git **não** contém o instalador. Se quiser compilar a partir do código:
+
+```powershell
+git clone https://github.com/mulheresevariedades-ship-it/Folha-de-Ponto.git
+cd Folha-de-Ponto
+pnpm install
+pnpm build:installer
+```
+
+Requisitos: Windows x64, Node 24, pnpm 9 e internet na primeira compilação.
+Saída: `dist-installer/Ponto-Digital-Setup-1.0.0.exe`. Para rodar sem instalar,
+use `pnpm build:portable` e depois `Iniciar-Ponto.bat` (seção *Rodar sem instalar
+PostgreSQL*).
+
 ## Demo local sem banco
 
 Para visualizar e testar a interface sem configurar PostgreSQL, mantenha a API demo
