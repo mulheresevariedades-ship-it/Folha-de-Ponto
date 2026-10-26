@@ -161,6 +161,12 @@ porta livre e abre a interface numa janela própria.
   secrets `CSC_LINK` (`.pfx` em base64 ou URL) e `CSC_KEY_PASSWORD`; a etapa
   "Conferir instalador e assinatura" falha se o segredo existir e o arquivo não
   estiver assinado de verdade.
+- **Assinatura local:** `scripts/desktop/new-test-cert.ps1` cria um certificado
+  autoassinado (somente teste) e `scripts/desktop/sign-installer.ps1` assina o
+  `.exe` com `Set-AuthenticodeSignature`, sem precisar do `signtool`. O
+  certificado de teste só é aceito nas máquinas em que o `.cer` for instalado em
+  "Autoridades de Certificação Raiz Confiáveis" e "Editores Confiáveis"; para
+  distribuir, use um certificado real.
 - O modo portátil clássico (`Iniciar-Ponto.bat`) e o deploy na Vercel não
   mudam; o instalador usa exatamente o mesmo pacote.
 
