@@ -63,6 +63,10 @@ Thumbs.db
 /dist-installer/
 /dist-desktop/
 
+# Pacotes prontos para distribuicao: grandes demais para o git (usar Releases).
+/Ponto-Digital-Windows-*.zip
+/Ponto-Digital-Windows-*.zip.sha256
+
 # Local environment files (contain real credentials, never commit)
 .env
 .env.*
