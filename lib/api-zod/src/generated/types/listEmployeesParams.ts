@@ -8,4 +8,14 @@
 
 export type ListEmployeesParams = {
 q?: string;
+includeInactive?: boolean;
+/**
+ * @minimum 1
+ * @maximum 1000
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };

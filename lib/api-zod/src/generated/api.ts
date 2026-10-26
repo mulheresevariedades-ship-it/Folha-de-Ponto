@@ -60,15 +60,34 @@ export const GetDashboardResponse = zod.object({
 
 
 /**
+ * @summary Competências com folhas arquivadas
+ */
+export const ListCompetenciesResponseItem = zod.object({
+  "competency": zod.string(),
+  "count": zod.number().int()
+})
+export const ListCompetenciesResponse = zod.array(ListCompetenciesResponseItem)
+
+
+/**
  * @summary Lista folhas com filtros opcionais
  */
+export const listTimesheetsQueryLimitMax = 1000;
+
+export const listTimesheetsQueryOffsetMin = 0;
+
+
+
 export const ListTimesheetsQueryParams = zod.object({
   "competency": zod.coerce.string().optional(),
   "status": zod.coerce.string().optional(),
-  "q": zod.coerce.string().optional()
+  "q": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().int().min(1).max(listTimesheetsQueryLimitMax).optional(),
+  "offset": zod.coerce.number().int().min(listTimesheetsQueryOffsetMin).optional()
 })
 
-export const ListTimesheetsResponseItem = zod.object({
+export const ListTimesheetsResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "matricula": zod.string().nullable(),
@@ -78,9 +97,39 @@ export const ListTimesheetsResponseItem = zod.object({
   "status_label": zod.string(),
   "reviewed_at": zod.coerce.date().nullable(),
   "note": zod.string().nullish(),
-  "file_url": zod.string().nullish()
+  "file_url": zod.string().nullish(),
+  "file_name": zod.string().nullish().describe('Nome oficial do PDF arquivado'),
+  "competency_source": zod.union([zod.literal('conteudo-pdf'),zod.literal('ocr-conteudo-pdf'),zod.literal('fallback'),zod.literal('nao-identificada'),zod.literal(null)]).nullish().describe('Origem da competência detectada no PDF'),
+  "ocr_applied": zod.boolean().optional(),
+  "ocr_unavailable": zod.boolean().optional()
+})),
+  "total": zod.number().int(),
+  "limit": zod.number().int(),
+  "offset": zod.number().int()
 })
-export const ListTimesheetsResponse = zod.array(ListTimesheetsResponseItem)
+
+
+/**
+ * @summary Lista servidores ativos sem folha na competência
+ */
+export const ListMissingTimesheetsQueryParams = zod.object({
+  "competency": zod.coerce.string(),
+  "q": zod.coerce.string().optional()
+})
+
+export const ListMissingTimesheetsResponse = zod.object({
+  "competency": zod.string(),
+  "total": zod.number().int(),
+  "items": zod.array(zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "matricula": zod.string(),
+  "email": zod.string().nullable(),
+  "cpf": zod.string(),
+  "competency": zod.string(),
+  "status": zod.enum(['faltante'])
+}))
+})
 
 
 /**
@@ -100,7 +149,11 @@ export const GetTimesheetResponse = zod.object({
   "status_label": zod.string(),
   "reviewed_at": zod.coerce.date().nullable(),
   "note": zod.string().nullish(),
-  "file_url": zod.string().nullish()
+  "file_url": zod.string().nullish(),
+  "file_name": zod.string().nullish().describe('Nome oficial do PDF arquivado'),
+  "competency_source": zod.union([zod.literal('conteudo-pdf'),zod.literal('ocr-conteudo-pdf'),zod.literal('fallback'),zod.literal('nao-identificada'),zod.literal(null)]).nullish().describe('Origem da competência detectada no PDF'),
+  "ocr_applied": zod.boolean().optional(),
+  "ocr_unavailable": zod.boolean().optional()
 })
 
 
@@ -129,12 +182,16 @@ export const ReviewTimesheetResponse = zod.object({
   "status_label": zod.string(),
   "reviewed_at": zod.coerce.date().nullable(),
   "note": zod.string().nullish(),
-  "file_url": zod.string().nullish()
+  "file_url": zod.string().nullish(),
+  "file_name": zod.string().nullish().describe('Nome oficial do PDF arquivado'),
+  "competency_source": zod.union([zod.literal('conteudo-pdf'),zod.literal('ocr-conteudo-pdf'),zod.literal('fallback'),zod.literal('nao-identificada'),zod.literal(null)]).nullish().describe('Origem da competência detectada no PDF'),
+  "ocr_applied": zod.boolean().optional(),
+  "ocr_unavailable": zod.boolean().optional()
 })
 
 
 /**
- * @summary Abre o PDF de demonstração
+ * @summary Abre o PDF arquivado (inline; `?download=1` envia como anexo)
  */
 export const GetTimesheetFileParams = zod.object({
   "id": zod.coerce.string()
@@ -144,7 +201,7 @@ export const GetTimesheetFileResponse = zod.unknown()
 
 
 /**
- * @summary Gera folha DOCX com os dias especiais do calendário
+ * @summary Gera a folha de ponto em PDF com os dias especiais do calendário
  */
 export const GenerateTimesheetQueryParams = zod.object({
   "employeeId": zod.coerce.number().int(),
@@ -176,7 +233,8 @@ export const PreviewBatchResponse = zod.object({
   "competencySource": zod.enum(['conteudo-pdf', 'ocr-conteudo-pdf', 'fallback', 'nao-identificada']).describe('Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada'),
   "ocrApplied": zod.boolean().describe('A leitura da página foi feita por OCR'),
   "ocrUnavailable": zod.boolean().describe('Nenhuma estratégia de OCR funcionou nesta página'),
-  "ocrUnavailableReason": zod.union([zod.literal('modelo-indisponivel'),zod.literal('tempo-limite'),zod.literal('motor-indisponivel'),zod.literal('leitura-falhou'),zod.literal(null)]).nullable().describe('Por que o OCR não conseguiu ler a página'),
+  "ocrUnavailableReason": zod.union([zod.literal('modelo-indisponivel'),zod.literal('tempo-limite'),zod.literal('motor-indisponivel'),zod.literal('leitura-falhou'),zod.literal('formato-imagem-nao-suportado'),zod.literal(null)]).nullable().describe('Por que o OCR não conseguiu ler a página'),
+  "ocrUnavailableDetail": zod.string().nullable().describe('Detalhe técnico da falha (ex.: filtro /JBIG2Decode)'),
   "duplicate": zod.boolean(),
   "duplicateInUpload": zod.boolean(),
   "duplicateReason": zod.string().nullable(),
@@ -226,7 +284,8 @@ export const ProcessBatchResponse = zod.object({
   "competencySource": zod.enum(['conteudo-pdf', 'ocr-conteudo-pdf', 'fallback', 'nao-identificada']).describe('Origem da competência — camada de texto do PDF, OCR da página digitalizada, competência de referência ou não identificada'),
   "ocrApplied": zod.boolean().describe('A leitura da página foi feita por OCR'),
   "ocrUnavailable": zod.boolean().describe('Nenhuma estratégia de OCR funcionou nesta página'),
-  "ocrUnavailableReason": zod.union([zod.literal('modelo-indisponivel'),zod.literal('tempo-limite'),zod.literal('motor-indisponivel'),zod.literal('leitura-falhou'),zod.literal(null)]).nullable().describe('Por que o OCR não conseguiu ler a página'),
+  "ocrUnavailableReason": zod.union([zod.literal('modelo-indisponivel'),zod.literal('tempo-limite'),zod.literal('motor-indisponivel'),zod.literal('leitura-falhou'),zod.literal('formato-imagem-nao-suportado'),zod.literal(null)]).nullable().describe('Por que o OCR não conseguiu ler a página'),
+  "ocrUnavailableDetail": zod.string().nullable().describe('Detalhe técnico da falha (ex.: filtro /JBIG2Decode)'),
   "duplicate": zod.boolean(),
   "duplicateInUpload": zod.boolean(),
   "duplicateReason": zod.string().nullable(),
@@ -256,11 +315,22 @@ export const ProcessBatchResponse = zod.object({
 /**
  * @summary Lista e pesquisa servidores
  */
+export const listEmployeesQueryIncludeInactiveDefault = false;
+export const listEmployeesQueryLimitMax = 1000;
+
+export const listEmployeesQueryOffsetMin = 0;
+
+
+
 export const ListEmployeesQueryParams = zod.object({
-  "q": zod.coerce.string().optional()
+  "q": zod.coerce.string().optional(),
+  "includeInactive": zod.coerce.boolean().default(listEmployeesQueryIncludeInactiveDefault),
+  "limit": zod.coerce.number().int().min(1).max(listEmployeesQueryLimitMax).optional(),
+  "offset": zod.coerce.number().int().min(listEmployeesQueryOffsetMin).optional()
 })
 
-export const ListEmployeesResponseItem = zod.object({
+export const ListEmployeesResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "matricula": zod.string(),
@@ -268,9 +338,13 @@ export const ListEmployeesResponseItem = zod.object({
   "email": zod.string(),
   "cargo": zod.string(),
   "carga_horaria": zod.number().int(),
-  "acumula": zod.boolean()
+  "acumula": zod.boolean(),
+  "active": zod.boolean()
+})),
+  "total": zod.number().int(),
+  "limit": zod.number().int(),
+  "offset": zod.number().int()
 })
-export const ListEmployeesResponse = zod.array(ListEmployeesResponseItem)
 
 
 /**
@@ -300,7 +374,8 @@ export const CreateEmployeeResponse = zod.object({
   "email": zod.string(),
   "cargo": zod.string(),
   "carga_horaria": zod.number().int(),
-  "acumula": zod.boolean()
+  "acumula": zod.boolean(),
+  "active": zod.boolean()
 })
 
 
@@ -333,7 +408,8 @@ export const UpdateEmployeeResponse = zod.object({
   "email": zod.string(),
   "cargo": zod.string(),
   "carga_horaria": zod.number().int(),
-  "acumula": zod.boolean()
+  "acumula": zod.boolean(),
+  "active": zod.boolean()
 })
 
 
@@ -345,6 +421,26 @@ export const DeleteEmployeeParams = zod.object({
 })
 
 export const DeleteEmployeeResponse = zod.void()
+
+
+/**
+ * @summary Reativa um servidor inativo
+ */
+export const ReactivateEmployeeParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ReactivateEmployeeResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "matricula": zod.string(),
+  "cpf": zod.string(),
+  "email": zod.string(),
+  "cargo": zod.string(),
+  "carga_horaria": zod.number().int(),
+  "acumula": zod.boolean(),
+  "active": zod.boolean()
+})
 
 
 /**
@@ -585,7 +681,8 @@ export const SendDispatchBatchResponse = zod.object({
   "results": zod.array(zod.object({
   "id": zod.number().int(),
   "status": zod.string(),
-  "message": zod.string()
+  "message": zod.string().optional(),
+  "reason": zod.string().optional()
 }))
 })
 
@@ -593,21 +690,43 @@ export const SendDispatchBatchResponse = zod.object({
 /**
  * @summary Pesquisa histórico de alterações e envios
  */
+export const listAuditQueryLimitMax = 500;
+
+export const listAuditQueryOffsetMin = 0;
+
+
+
 export const ListAuditQueryParams = zod.object({
-  "q": zod.coerce.string().optional()
+  "q": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().int().min(1).max(listAuditQueryLimitMax).optional(),
+  "offset": zod.coerce.number().int().min(listAuditQueryOffsetMin).optional()
 })
 
-export const ListAuditResponseItem = zod.object({
+export const ListAuditResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.string(),
+  "action": zod.string(),
+  "entity_type": zod.string(),
+  "entity_id": zod.string(),
+  "created_at": zod.coerce.date(),
+  "date": zod.coerce.date(),
+  "actor_name": zod.string().nullable(),
+  "actor_email": zod.string().nullable(),
   "name": zod.string(),
   "matricula": zod.string(),
   "cpf": zod.string(),
-  "action": zod.string(),
-  "status": zod.string(),
-  "competencia": zod.string(),
-  "date": zod.coerce.date()
+  "email": zod.string().nullable(),
+  "file_name": zod.string().nullable(),
+  "delivery_mode": zod.string().nullable(),
+  "smtp_source": zod.string().nullable(),
+  "message": zod.string().nullable(),
+  "status": zod.string().nullable(),
+  "competencia": zod.string().nullable()
+})),
+  "total": zod.number().int(),
+  "limit": zod.number().int(),
+  "offset": zod.number().int()
 })
-export const ListAuditResponse = zod.array(ListAuditResponseItem)
 
 
 /**

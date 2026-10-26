@@ -8,11 +8,30 @@
 
 export interface AuditEvent {
   id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  created_at: Date;
+  date: Date;
+  /** @nullable */
+  actor_name: string | null;
+  /** @nullable */
+  actor_email: string | null;
   name: string;
   matricula: string;
   cpf: string;
-  action: string;
-  status: string;
-  competencia: string;
-  date: Date;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  file_name: string | null;
+  /** @nullable */
+  delivery_mode: string | null;
+  /** @nullable */
+  smtp_source: string | null;
+  /** @nullable */
+  message: string | null;
+  /** @nullable */
+  status: string | null;
+  /** @nullable */
+  competencia: string | null;
 }

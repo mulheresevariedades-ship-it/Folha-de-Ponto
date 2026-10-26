@@ -20,13 +20,13 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  AuditEvent,
   BatchPreview,
   BatchProcessResult,
   BatchUploadInput,
   CalendarEvent,
   CalendarEventInput,
   CalendarEventUpdate,
+  CompetencySummary,
   DashboardMetrics,
   Dispatch,
   DispatchBatchInput,
@@ -40,13 +40,18 @@ import type {
   HealthStatus,
   ImportPreview,
   ImportSummary,
+  ListAudit200,
   ListAuditParams,
   ListCalendarDatesParams,
   ListDispatchesParams,
+  ListEmployees200,
   ListEmployeesParams,
+  ListMissingTimesheetsParams,
+  ListTimesheets200,
   ListTimesheetsParams,
   LockSessionInput,
   LockState,
+  MissingTimesheetList,
   OcrDiagnostics,
   SmtpSettings,
   SmtpSettingsInput,
@@ -323,6 +328,83 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
 
 
 
+export const getListCompetenciesUrl = () => {
+
+
+
+
+  return `/api/competencies`
+}
+
+/**
+ * @summary Competências com folhas arquivadas
+ */
+export const listCompetencies = async ( options?: Parameters<typeof customFetch>[1]): Promise<CompetencySummary[]> => {
+
+  return customFetch<CompetencySummary[]>(getListCompetenciesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCompetenciesQueryKey = () => {
+    return [
+    `/api/competencies`
+    ] as const;
+    }
+
+
+export const getListCompetenciesQueryOptions = <TData = Awaited<ReturnType<typeof listCompetencies>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCompetencies>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCompetenciesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCompetencies>>> = ({ signal }) => listCompetencies({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCompetencies>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCompetenciesQueryResult = NonNullable<Awaited<ReturnType<typeof listCompetencies>>>
+export type ListCompetenciesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Competências com folhas arquivadas
+ */
+
+export function useListCompetencies<TData = Awaited<ReturnType<typeof listCompetencies>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCompetencies>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCompetenciesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListTimesheetsUrl = (params?: ListTimesheetsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -341,9 +423,9 @@ export const getListTimesheetsUrl = (params?: ListTimesheetsParams,) => {
 /**
  * @summary Lista folhas com filtros opcionais
  */
-export const listTimesheets = async (params?: ListTimesheetsParams, options?: Parameters<typeof customFetch>[1]): Promise<Timesheet[]> => {
+export const listTimesheets = async (params?: ListTimesheetsParams, options?: Parameters<typeof customFetch>[1]): Promise<ListTimesheets200> => {
 
-  return customFetch<Timesheet[]>(getListTimesheetsUrl(params),
+  return customFetch<ListTimesheets200>(getListTimesheetsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -395,6 +477,90 @@ export function useListTimesheets<TData = Awaited<ReturnType<typeof listTimeshee
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTimesheetsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListMissingTimesheetsUrl = (params: ListMissingTimesheetsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/timesheets/missing?${stringifiedParams}` : `/api/timesheets/missing`
+}
+
+/**
+ * @summary Lista servidores ativos sem folha na competência
+ */
+export const listMissingTimesheets = async (params: ListMissingTimesheetsParams, options?: Parameters<typeof customFetch>[1]): Promise<MissingTimesheetList> => {
+
+  return customFetch<MissingTimesheetList>(getListMissingTimesheetsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMissingTimesheetsQueryKey = (params?: ListMissingTimesheetsParams,) => {
+    return [
+    `/api/timesheets/missing`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListMissingTimesheetsQueryOptions = <TData = Awaited<ReturnType<typeof listMissingTimesheets>>, TError = ErrorType<void>>(params: ListMissingTimesheetsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMissingTimesheets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMissingTimesheetsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMissingTimesheets>>> = ({ signal }) => listMissingTimesheets(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMissingTimesheets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMissingTimesheetsQueryResult = NonNullable<Awaited<ReturnType<typeof listMissingTimesheets>>>
+export type ListMissingTimesheetsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Lista servidores ativos sem folha na competência
+ */
+
+export function useListMissingTimesheets<TData = Awaited<ReturnType<typeof listMissingTimesheets>>, TError = ErrorType<void>>(
+ params: ListMissingTimesheetsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMissingTimesheets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMissingTimesheetsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -582,7 +748,7 @@ export const getGetTimesheetFileUrl = (id: string,) => {
 }
 
 /**
- * @summary Abre o PDF de demonstração
+ * @summary Abre o PDF arquivado (inline; `?download=1` envia como anexo)
  */
 export const getTimesheetFile = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
 
@@ -629,7 +795,7 @@ export type GetTimesheetFileQueryError = ErrorType<void>
 
 
 /**
- * @summary Abre o PDF de demonstração
+ * @summary Abre o PDF arquivado (inline; `?download=1` envia como anexo)
  */
 
 export function useGetTimesheetFile<TData = Awaited<ReturnType<typeof getTimesheetFile>>, TError = ErrorType<void>>(
@@ -666,7 +832,7 @@ export const getGenerateTimesheetUrl = (params: GenerateTimesheetParams,) => {
 }
 
 /**
- * @summary Gera folha DOCX com os dias especiais do calendário
+ * @summary Gera a folha de ponto em PDF com os dias especiais do calendário
  */
 export const generateTimesheet = async (params: GenerateTimesheetParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
 
@@ -713,7 +879,7 @@ export type GenerateTimesheetQueryError = ErrorType<void>
 
 
 /**
- * @summary Gera folha DOCX com os dias especiais do calendário
+ * @summary Gera a folha de ponto em PDF com os dias especiais do calendário
  */
 
 export function useGenerateTimesheet<TData = Awaited<ReturnType<typeof generateTimesheet>>, TError = ErrorType<void>>(
@@ -922,9 +1088,9 @@ export const getListEmployeesUrl = (params?: ListEmployeesParams,) => {
 /**
  * @summary Lista e pesquisa servidores
  */
-export const listEmployees = async (params?: ListEmployeesParams, options?: Parameters<typeof customFetch>[1]): Promise<Employee[]> => {
+export const listEmployees = async (params?: ListEmployeesParams, options?: Parameters<typeof customFetch>[1]): Promise<ListEmployees200> => {
 
-  return customFetch<Employee[]>(getListEmployeesUrl(params),
+  return customFetch<ListEmployees200>(getListEmployeesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1237,6 +1403,80 @@ export const useDeleteEmployee = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getDeleteEmployeeMutationOptions(options));
+    }
+
+export const getReactivateEmployeeUrl = (id: number,) => {
+
+
+
+
+  return `/api/employees/${id}/reactivate`
+}
+
+/**
+ * @summary Reativa um servidor inativo
+ */
+export const reactivateEmployee = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<Employee> => {
+
+  return customFetch<Employee>(getReactivateEmployeeUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getReactivateEmployeeMutationKey = () => ['reactivateEmployee'] as const;
+
+export const getReactivateEmployeeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactivateEmployee>>, TError,ReactivateEmployeeMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reactivateEmployee>>, TError,ReactivateEmployeeMutationVariables, TContext> => {
+
+const mutationKey = getReactivateEmployeeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reactivateEmployee>>, ReactivateEmployeeMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  reactivateEmployee(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReactivateEmployeeMutationResult = NonNullable<Awaited<ReturnType<typeof reactivateEmployee>>>
+
+    export type ReactivateEmployeeMutationError = ErrorType<void>
+    export type ReactivateEmployeeMutationVariables = {id: number}
+
+    /**
+ * @summary Reativa um servidor inativo
+ */
+export const useReactivateEmployee = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactivateEmployee>>, TError,ReactivateEmployeeMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reactivateEmployee>>,
+        TError,
+        ReactivateEmployeeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReactivateEmployeeMutationOptions(options));
     }
 
 export const getPreviewEmployeeImportUrl = () => {
@@ -2216,9 +2456,9 @@ export const getListAuditUrl = (params?: ListAuditParams,) => {
 /**
  * @summary Pesquisa histórico de alterações e envios
  */
-export const listAudit = async (params?: ListAuditParams, options?: Parameters<typeof customFetch>[1]): Promise<AuditEvent[]> => {
+export const listAudit = async (params?: ListAuditParams, options?: Parameters<typeof customFetch>[1]): Promise<ListAudit200> => {
 
-  return customFetch<AuditEvent[]>(getListAuditUrl(params),
+  return customFetch<ListAudit200>(getListAuditUrl(params),
   {
     ...options,
     method: 'GET'

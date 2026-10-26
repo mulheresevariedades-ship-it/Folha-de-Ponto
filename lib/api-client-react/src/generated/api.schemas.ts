@@ -47,6 +47,20 @@ export interface DashboardMetrics {
   dispatch_error: number;
 }
 
+/**
+ * Origem da competência detectada no PDF
+ * @nullable
+ */
+export type TimesheetCompetencySource = typeof TimesheetCompetencySource[keyof typeof TimesheetCompetencySource] | null;
+
+
+export const TimesheetCompetencySource = {
+  'conteudo-pdf': 'conteudo-pdf',
+  'ocr-conteudo-pdf': 'ocr-conteudo-pdf',
+  fallback: 'fallback',
+  'nao-identificada': 'nao-identificada',
+} as const;
+
 export interface Timesheet {
   id: string;
   name: string;
@@ -62,6 +76,23 @@ export interface Timesheet {
   note?: string | null;
   /** @nullable */
   file_url?: string | null;
+  /**
+     * Nome oficial do PDF arquivado
+     * @nullable
+     */
+  file_name?: string | null;
+  /**
+     * Origem da competência detectada no PDF
+     * @nullable
+     */
+  competency_source?: TimesheetCompetencySource;
+  ocr_applied?: boolean;
+  ocr_unavailable?: boolean;
+}
+
+export interface CompetencySummary {
+  competency: string;
+  count: number;
 }
 
 export type TimesheetReviewInputAction = typeof TimesheetReviewInputAction[keyof typeof TimesheetReviewInputAction];
@@ -90,6 +121,31 @@ export interface Employee {
   cargo: string;
   carga_horaria: number;
   acumula: boolean;
+  active: boolean;
+}
+
+export type MissingTimesheetStatus = typeof MissingTimesheetStatus[keyof typeof MissingTimesheetStatus];
+
+
+export const MissingTimesheetStatus = {
+  faltante: 'faltante',
+} as const;
+
+export interface MissingTimesheet {
+  id: number;
+  name: string;
+  matricula: string;
+  /** @nullable */
+  email: string | null;
+  cpf: string;
+  competency: string;
+  status: MissingTimesheetStatus;
+}
+
+export interface MissingTimesheetList {
+  competency: string;
+  total: number;
+  items: MissingTimesheet[];
 }
 
 export interface EmployeeInput {
@@ -198,6 +254,7 @@ export const BatchPreviewItemOcrUnavailableReason = {
   'tempo-limite': 'tempo-limite',
   'motor-indisponivel': 'motor-indisponivel',
   'leitura-falhou': 'leitura-falhou',
+  'formato-imagem-nao-suportado': 'formato-imagem-nao-suportado',
 } as const;
 
 export interface BatchPreviewItem {
@@ -220,6 +277,11 @@ export interface BatchPreviewItem {
      * @nullable
      */
   ocrUnavailableReason: BatchPreviewItemOcrUnavailableReason;
+  /**
+     * Detalhe técnico da falha (ex.: filtro /JBIG2Decode)
+     * @nullable
+     */
+  ocrUnavailableDetail: string | null;
   duplicate: boolean;
   duplicateInUpload: boolean;
   /** @nullable */
@@ -388,7 +450,8 @@ export interface DispatchBatchInput {
 export type DispatchBatchResultResultsItem = {
   id: number;
   status: string;
-  message: string;
+  message?: string;
+  reason?: string;
 };
 
 export interface DispatchBatchResult {
@@ -398,13 +461,32 @@ export interface DispatchBatchResult {
 
 export interface AuditEvent {
   id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  created_at: string;
+  date: string;
+  /** @nullable */
+  actor_name: string | null;
+  /** @nullable */
+  actor_email: string | null;
   name: string;
   matricula: string;
   cpf: string;
-  action: string;
-  status: string;
-  competencia: string;
-  date: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  file_name: string | null;
+  /** @nullable */
+  delivery_mode: string | null;
+  /** @nullable */
+  smtp_source: string | null;
+  /** @nullable */
+  message: string | null;
+  /** @nullable */
+  status: string | null;
+  /** @nullable */
+  competencia: string | null;
 }
 
 export type SmtpSettingsSource = typeof SmtpSettingsSource[keyof typeof SmtpSettingsSource];
@@ -467,6 +549,27 @@ export type ListTimesheetsParams = {
 competency?: string;
 status?: string;
 q?: string;
+/**
+ * @minimum 1
+ * @maximum 1000
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
+};
+
+export type ListTimesheets200 = {
+  items: Timesheet[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type ListMissingTimesheetsParams = {
+competency: string;
+q?: string;
 };
 
 export type GenerateTimesheetParams = {
@@ -476,6 +579,23 @@ competency: string;
 
 export type ListEmployeesParams = {
 q?: string;
+includeInactive?: boolean;
+/**
+ * @minimum 1
+ * @maximum 1000
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
+};
+
+export type ListEmployees200 = {
+  items: Employee[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type ListCalendarDatesParams = {
@@ -497,6 +617,22 @@ to?: string;
 
 export type ListAuditParams = {
 q?: string;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
+};
+
+export type ListAudit200 = {
+  items: AuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type GetLockStateParams = {

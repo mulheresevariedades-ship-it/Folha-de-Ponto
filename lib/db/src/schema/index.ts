@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
 	boolean,
 	integer,
@@ -81,6 +81,9 @@ export const timesheets = pgTable(
 		extractedData: jsonb("extracted_data").$type<Record<string, unknown>>(),
 		originalFilePath: text("original_file_path"),
 		personCompetencyKey: text("person_competency_key"),
+		// Identidade estável da página: hash do PDF de origem + número da página.
+		// Não muda quando o arquivo é renomeado, reenviado ou revisado.
+		sourceFingerprint: text("source_fingerprint"),
 		reviewedBy: uuid("reviewed_by").references(() => users.id),
 		reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -95,6 +98,9 @@ export const timesheets = pgTable(
 			table.personCompetencyKey,
 			table.competency,
 		),
+		sourceFingerprintUnique: uniqueIndex("timesheets_source_fingerprint_unique")
+			.on(table.sourceFingerprint)
+			.where(sql`${table.sourceFingerprint} is not null`),
 	}),
 );
 
@@ -111,7 +117,10 @@ export const dispatches = pgTable("dispatches", {
 	authorizedAt: timestamp("authorized_at", { withTimezone: true }),
 	sentAt: timestamp("sent_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+	// Um despacho por folha: o histórico é atualizado em vez de duplicado.
+	timesheetUnique: uniqueIndex("dispatches_timesheet_unique").on(table.timesheetId),
+}));
 
 export const auditEvents = pgTable("audit_events", {
 	id: serial("id").primaryKey(),

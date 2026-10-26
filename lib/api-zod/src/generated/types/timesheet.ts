@@ -5,6 +5,7 @@
  * API do Ponto Digital DIGEP em modo de demonstração
  * OpenAPI spec version: 0.1.0
  */
+import type { TimesheetCompetencySource } from './timesheetCompetencySource';
 
 export interface Timesheet {
   id: string;
@@ -21,4 +22,16 @@ export interface Timesheet {
   note?: string | null;
   /** @nullable */
   file_url?: string | null;
+  /**
+     * Nome oficial do PDF arquivado
+     * @nullable
+     */
+  file_name?: string | null;
+  /**
+     * Origem da competência detectada no PDF
+     * @nullable
+     */
+  competency_source?: TimesheetCompetencySource;
+  ocr_applied?: boolean;
+  ocr_unavailable?: boolean;
 }

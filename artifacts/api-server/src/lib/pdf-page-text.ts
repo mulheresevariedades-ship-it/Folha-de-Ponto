@@ -23,7 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { hasUsableText } from "./pdf-text";
-import { extractPageRaster, type PageRaster } from "./pdf-raster";
+import { extractPageRaster, type PageRaster, type PageRasterResult } from "./pdf-raster";
 import { OCR_MIN_CONFIDENCE, OcrError, type OcrEngine, type OcrFailureReason } from "./ocr";
 
 const execFile = promisify(execFileCallback);
@@ -45,6 +45,8 @@ export type PageTextResult = {
 	ocrUnavailable: boolean;
 	/** Por que o OCR não funcionou (quando ele falhou). */
 	ocrUnavailableReason: OcrFailureReason | null;
+	/** Detalhe técnico da falha (ex.: `filtro /JBIG2Decode`). */
+	ocrUnavailableDetail: string | null;
 	/** O OCR leu, mas com confiança baixa: os campos não são confiáveis. */
 	lowConfidence: boolean;
 	ocrStrategy: OcrStrategy;
@@ -55,8 +57,10 @@ export type PageTextTools = {
 	readWithPdftotext(pdfPath: string, pageNumber: number): Promise<string | null>;
 	/** PNG da página pelo `pdftoppm` (poppler). */
 	renderWithPdftoppm(pdfPath: string, pageNumber: number): Promise<Buffer | null>;
-	/** Imagem da página extraída do próprio arquivo (JavaScript puro). */
+	/** Imagem da página extraída do próprio arquivo (JavaScript puro + PDFium). */
 	extractRaster(fileBuffer: Buffer, pageNumber: number): Promise<PageRaster | null>;
+	/** Variante detalhada; quando ausente, usa `extractRaster`. */
+	extractRasterDetailed?(fileBuffer: Buffer, pageNumber: number): Promise<PageRasterResult>;
 	/** Motor de OCR. */
 	ocr: OcrEngine | null;
 };
@@ -129,6 +133,7 @@ export async function readPageText(options: {
 			ocrConfidence: 0,
 			ocrUnavailable: false,
 			ocrUnavailableReason: null,
+			ocrUnavailableDetail: null,
 			lowConfidence: false,
 			ocrStrategy: null,
 		};
@@ -142,6 +147,7 @@ export async function readPageText(options: {
 			ocrConfidence: 0,
 			ocrUnavailable: false,
 			ocrUnavailableReason: null,
+			ocrUnavailableDetail: null,
 			lowConfidence: false,
 			ocrStrategy: null,
 		};
@@ -155,6 +161,7 @@ export async function readPageText(options: {
 			ocrConfidence: 0,
 			ocrUnavailable: true,
 			ocrUnavailableReason: "motor-indisponivel",
+			ocrUnavailableDetail: null,
 			lowConfidence: false,
 			ocrStrategy: null,
 		};
@@ -165,11 +172,25 @@ export async function readPageText(options: {
 	// tiver uma imagem aproveitável — ou se a leitura dessa imagem falhar —
 	// entra o `pdftoppm` do poppler.
 	let ocrReason: OcrFailureReason | null = null;
+	let ocrDetail: string | null = null;
 	for (const strategy of ["imagem-js", "poppler"] as const) {
 		let bytes: Buffer | null = null;
 		if (strategy === "imagem-js") {
-			const raster = await tools.extractRaster(options.fileBuffer, options.pageNumber);
-			bytes = raster?.bytes ?? null;
+			if (tools.extractRasterDetailed) {
+				const detailed = await tools.extractRasterDetailed(options.fileBuffer, options.pageNumber);
+				bytes = detailed.raster?.bytes ?? null;
+				if (!bytes && detailed.reason === "formato-imagem-nao-suportado") {
+					ocrReason = "formato-imagem-nao-suportado";
+					ocrDetail = detailed.filters.length
+						? `filtro ${detailed.filters.join(", ")}`
+						: "imagem sem filtro reconhecido";
+				} else if (!bytes && detailed.reason && detailed.reason !== "sem-imagem") {
+					ocrDetail = detailed.reason;
+				}
+			} else {
+				const raster = await tools.extractRaster(options.fileBuffer, options.pageNumber);
+				bytes = raster?.bytes ?? null;
+			}
 		} else {
 			bytes = await tools.renderWithPdftoppm(options.pdfPath, options.pageNumber);
 		}
@@ -185,12 +206,14 @@ export async function readPageText(options: {
 				ocrConfidence: Math.max(0, Math.min(100, Math.round(outcome.confidence))),
 				ocrUnavailable: false,
 				ocrUnavailableReason: null,
+				ocrUnavailableDetail: null,
 				lowConfidence: outcome.confidence < OCR_MIN_CONFIDENCE,
 				ocrStrategy: strategy,
 			};
 		} catch (error) {
 			// Falhou esta estratégia: tenta a próxima (e guarda o motivo).
 			ocrReason = error instanceof OcrError ? error.reason : "leitura-falhou";
+			ocrDetail = error instanceof Error ? error.message : null;
 		}
 	}
 
@@ -201,6 +224,7 @@ export async function readPageText(options: {
 		ocrConfidence: 0,
 		ocrUnavailable: true,
 		ocrUnavailableReason: ocrReason ?? "leitura-falhou",
+		ocrUnavailableDetail: ocrDetail,
 		lowConfidence: false,
 		ocrStrategy: null,
 	};

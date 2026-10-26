@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { Link, useLocation } from 'wouter';
 import {
   Activity, AlertCircle, Archive, CalendarDays, Check, ChevronRight, Clock3,
-  FileCheck2, FileSpreadsheet, FileText, FolderOpen, History, LayoutDashboard, LockKeyhole,
+  FileCheck2, FileSpreadsheet, FileText, FileX2, FolderOpen, History, LayoutDashboard, LockKeyhole,
   Mail, Menu, Pencil, Plus, Search, Send, Settings2, ShieldCheck, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import {
@@ -13,19 +13,20 @@ import {
   useCreateCalendarDate, useCreateEmployee, useDeleteCalendarDate, useDeleteEmployee,
   useGetDashboard, useGetLockState, useGetSmtpSettings, useGetTimesheetFile,
   useHeartbeatLock, useImportCalendar, useImportEmployees, useListAudit, useListCalendarDates,
-  useListCompetencies, useListDispatches, useListEmployees, useListTimesheets, usePreviewBatch,
-  usePreviewCalendarImport, usePreviewEmployeeImport, useProcessBatch, useReleaseLock,
+  useListCompetencies, useListDispatches, useListEmployees, useListMissingTimesheets, useListTimesheets, usePreviewBatch,
+  usePreviewCalendarImport, usePreviewEmployeeImport, useProcessBatch, useReactivateEmployee, useReleaseLock,
   useResendDispatch, useReviewTimesheet, useSendDispatch, useSendDispatchBatch,
   useTestSmtpSettings, useUpdateCalendarDate, useUpdateEmployee, useUpdateSmtpSettings,
 } from '@workspace/api-client-react';
 import type { Employee, CalendarEvent, Timesheet, Dispatch, AuditEvent, SmtpSettingsInput } from '@workspace/api-client-react';
 
-type Page = 'inicio' | 'folhas' | 'servidores' | 'calendario' | 'envios' | 'configuracoes' | 'auditoria';
-const paths: Record<Page, string> = { inicio: '/', folhas: '/folhas', servidores: '/servidores', calendario: '/calendario', envios: '/envios', configuracoes: '/configuracoes', auditoria: '/auditoria' };
-const titles: Record<Page, string> = { inicio: 'Visão geral', folhas: 'Folhas de ponto', servidores: 'Servidores', calendario: 'Calendário acadêmico', envios: 'Despachos', configuracoes: 'Configurações', auditoria: 'Auditoria' };
+type Page = 'inicio' | 'folhas' | 'faltantes' | 'servidores' | 'calendario' | 'envios' | 'configuracoes' | 'auditoria';
+const paths: Record<Page, string> = { inicio: '/', folhas: '/folhas', faltantes: '/faltantes', servidores: '/servidores', calendario: '/calendario', envios: '/envios', configuracoes: '/configuracoes', auditoria: '/auditoria' };
+const titles: Record<Page, string> = { inicio: 'Visão geral', folhas: 'Folhas de ponto', faltantes: 'Folhas faltantes', servidores: 'Servidores', calendario: 'Calendário acadêmico', envios: 'Despachos', configuracoes: 'Configurações', auditoria: 'Auditoria' };
 const navigation: { page: Page; icon: typeof LayoutDashboard; group: string }[] = [
   { page: 'inicio', icon: LayoutDashboard, group: 'Operação' },
   { page: 'folhas', icon: FileCheck2, group: 'Operação' },
+  { page: 'faltantes', icon: FileX2, group: 'Operação' },
   { page: 'servidores', icon: Users, group: 'Cadastros' },
   { page: 'calendario', icon: CalendarDays, group: 'Cadastros' },
   { page: 'envios', icon: Send, group: 'Comunicação' },
@@ -168,6 +169,7 @@ function AppFrame() {
         {!lockPending && !lockError && readOnly && <div className="read-only" data-testid="status-readonly"><LockKeyhole size={15} style={{ verticalAlign: 'middle', marginRight: 7 }}/>{lock?.locked ? 'Sistema em uso por outro usuário. Consulte os registros; a edição será liberada automaticamente quando a outra sessão encerrar.' : 'A trava de edição desta sessão ainda não foi renovada; os botões ficam disponíveis em instantes.'}</div>}
         {currentPage === 'inicio' && <DashboardPage metrics={metrics} loading={dashboardQuery.isLoading} error={dashboardQuery.isError} competency={competency} setCompetency={setCompetency} sheets={sheetRows} sheetLoading={sheetQuery.isLoading} dispatches={dispatchRows} activity={activityRows} onRetry={() => { void dashboardQuery.refetch(); void sheetQuery.refetch(); }} navigate={(p) => setLocation(paths[p])}/>}
         {currentPage === 'folhas' && <TimesheetsPage competency={competency} setCompetency={setCompetency} readOnly={readOnly} notify={notify} invalidate={invalidate}/>}
+        {currentPage === 'faltantes' && <MissingTimesheetsPage competency={competency} setCompetency={setCompetency} notify={notify}/>}
         {currentPage === 'servidores' && <EmployeesPage readOnly={readOnly} notify={notify} invalidate={invalidate}/>}
         {currentPage === 'calendario' && <CalendarPage readOnly={readOnly} notify={notify} invalidate={invalidate} competency={competency}/>}
         {currentPage === 'envios' && <DispatchPage readOnly={readOnly} notify={notify} invalidate={invalidate}/>}
@@ -457,7 +459,9 @@ function GenerateTimesheetPanel({ readOnly, notify, competency }: { readOnly: bo
 
 function TimesheetsPage({ competency, setCompetency, readOnly, notify, invalidate }: { competency: string; setCompetency: (v: string) => void; readOnly: boolean; notify: (s:string)=>void; invalidate: (...keys: readonly (readonly unknown[])[])=>Promise<void> }) {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const [status, setStatus] = useState('todos');
+  const limit = 20;
   const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<Awaited<ReturnType<ReturnType<typeof usePreviewBatch>['mutateAsync']>> | null>(null);
   const [result, setResult] = useState<Awaited<ReturnType<ReturnType<typeof useProcessBatch>['mutateAsync']>> | null>(null);
@@ -470,7 +474,7 @@ function TimesheetsPage({ competency, setCompetency, readOnly, notify, invalidat
   const [pdfSheet, setPdfSheet] = useState<{ id: string; title: string; fileName?: string | null } | null>(null);
   const [downloadingId, setDownloadingId] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const query = useListTimesheets({ competency, q: search || undefined, status: status === 'todos' ? undefined : status });
+  const query = useListTimesheets({ competency, q: search || undefined, status: status === 'todos' ? undefined : status, limit, offset: page * limit });
   const previewBatch = usePreviewBatch();
   const processBatch = useProcessBatch();
   const review = useReviewTimesheet();
@@ -640,15 +644,52 @@ function Modal({ title, intro, children, onClose, wide = false }: { title:string
   return <div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><section className={`modal ${wide ? 'wide-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="text-action" style={{float:'right'}} aria-label="Fechar" onClick={onClose}><X size={18}/></button><h2 id="modal-title">{title}</h2><p className="modal-intro">{intro}</p>{children}</section></div>;
 }
 
+function MissingTimesheetsPage({ competency, setCompetency, notify }: { competency: string; setCompetency: (v: string) => void; notify: (s: string) => void }) {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const limit = 20;
+  const query = useListMissingTimesheets({ competency, q: search || undefined, limit, offset: page * limit } as any);
+  const rows = (query.data as any)?.items ?? query.data ?? [];
+  const total = (query.data as any)?.total ?? rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  return <div className="page">
+    <PageHead eyebrow="Folhas faltantes" title="Folhas faltantes" description="Servidores ativos sem folha para a competência selecionada."/>
+    <div className="toolbar">
+      <p><strong>Total</strong> — {total} servidor(es) sem folha</p>
+      <div className="tools">
+        <CompetencyControl value={competency} onChange={(v) => { setCompetency(v); setPage(0); }} />
+        <Search size={15} color="#8a9991"/>
+        <input className="search" placeholder="Nome, matrícula ou CPF" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} data-testid="search-missing"/>
+      </div>
+    </div>
+    {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : query.isLoading ? <LoadingTable/> : (rows.length ? (
+      <>
+        <DataTable headers={['Servidor', 'Matrícula', 'CPF', 'E-mail', 'Status']}><>{rows.map((row: any) => <tr key={row.id ?? row.employee_id}><td><div className="person"><span className="person-mark">{initials(row.employee_name ?? row.name ?? '')}</span>{row.employee_name ?? row.name}</div></td><td className="mono">{row.employee_matricula ?? row.matricula}</td><td>{row.employee_cpf_masked ?? row.cpf ?? '—'}</td><td>{row.employee_email ?? row.email ?? '—'}</td><td><Pill tone="warning">Faltante</Pill></td></tr>)}</></DataTable>
+        <div className="toolbar" style={{ marginTop: 12 }}>
+          <p>Página {page + 1} de {totalPages} — {total} registro(s)</p>
+          <div className="tools">
+            <button className="button secondary" disabled={page <= 0} onClick={() => setPage(p => Math.max(0, p - 1))} data-testid="button-missing-prev">Anterior</button>
+            <button className="button secondary" disabled={page + 1 >= totalPages} onClick={() => setPage(p => p + 1)} data-testid="button-missing-next">Próxima</button>
+          </div>
+        </div>
+      </>
+    ) : <Empty icon={FileX2} title="Nenhuma folha faltante" copy="Todos os servidores ativos possuem folha para a competência selecionada."/>)}
+  </div>;
+}
+
 function EmployeesPage({ readOnly, notify, invalidate }: {readOnly:boolean;notify:(s:string)=>void;invalidate:(...keys:readonly (readonly unknown[])[])=>Promise<void>}) {
   const [search,setSearch]=useState('');
+  const [page,setPage]=useState(0);
   const [editing,setEditing]=useState<Employee|null|false>(false);
   const [form,setForm]=useState({name:'',matricula:'',cpf:'',email:'',cargo:'',workloadHours:'40',accumulatesRole:false});
   const [file,setFile]=useState<File|null>(null);
   const [importPreview,setImportPreview]=useState<Awaited<ReturnType<ReturnType<typeof usePreviewEmployeeImport>['mutateAsync']>>|null>(null);
+  const [showInactive,setShowInactive]=useState(false);
   const inputRef=useRef<HTMLInputElement>(null);
-  const query=useListEmployees({q:search||undefined});
+  const limit=20;
+  const query=useListEmployees({q:search||undefined, includeInactive: showInactive || undefined, limit, offset: page*limit } as any);
   const create=useCreateEmployee(); const update=useUpdateEmployee(); const remove=useDeleteEmployee();
+  const reactivate=useReactivateEmployee();
   const previewImport=usePreviewEmployeeImport(); const importEmployees=useImportEmployees();
   const rows=query.data?.items??[];
   const openNew=()=>{setForm({name:'',matricula:'',cpf:'',email:'',cargo:'',workloadHours:'40',accumulatesRole:false});setEditing(null);};
@@ -658,14 +699,16 @@ function EmployeesPage({ readOnly, notify, invalidate }: {readOnly:boolean;notif
   const validateImport=async()=>{if(!file)return notify('Selecione uma planilha.');if(readOnly)return;try{setImportPreview(await previewImport.mutateAsync({data:{file}}));}catch(err){notify(errorMessage(err));}};
   const confirmImport=async()=>{if(!file||readOnly)return;try{const result=await importEmployees.mutateAsync({data:{file}});await invalidate(getListEmployeesQueryKey());notify(`Importação concluída: ${result.imported} novos, ${result.updated} atualizados, ${result.skipped} ignorados.`);setImportPreview(null);setFile(null);if(inputRef.current)inputRef.current.value='';}catch(err){notify(errorMessage(err));}};
   const deleteRow=async(row:Employee)=>{if(readOnly)return;if(!window.confirm(`Desativar o cadastro de ${row.name}?`))return;try{await remove.mutateAsync({id:row.id});await invalidate(getListEmployeesQueryKey());notify('Cadastro desativado.');}catch(err){notify(errorMessage(err));}};
+  const reactivateRow=async(row:Employee)=>{if(readOnly)return;if(!window.confirm(`Reativar o cadastro de ${row.name}?`))return;try{await reactivate.mutateAsync({id:row.id});await invalidate(getListEmployeesQueryKey());notify('Servidor reativado.');}catch(err){notify(errorMessage(err));}};
   return <div className="page">
     <PageHead eyebrow="Base cadastral" title="Servidores" description="Pesquise os cadastros retornados pela API, registre alterações ou valide uma planilha antes da importação." actions={<button className="button" disabled={readOnly} onClick={openNew} data-testid="button-new-employee"><Plus/>Novo cadastro</button>}/>
     <Notice>Cadastros podem conter dados pessoais. Trabalhe somente com registros sintéticos de demonstração; nenhum servidor é pré-carregado.</Notice>
     <section className="panel" style={{marginBottom:15}}><div className="panel-heading"><div><h2>Importação de planilha</h2><p>Validação e resumo antes de gravar. Os dados vêm do arquivo selecionado.</p></div><FileSpreadsheet size={17} color="#739282"/></div><div className="tools"><input ref={inputRef} type="file" hidden accept=".xlsx,.xls" onChange={stageFile} data-testid="input-employee-import"/><button className="button secondary" disabled={readOnly} onClick={()=>inputRef.current?.click()} data-testid="button-choose-employee-import"><Upload/>Escolher planilha</button><span className="selected-file" style={{margin:0}}>{file?.name??'Nenhum arquivo selecionado · .xlsx ou .xls'}</span><button className="button" disabled={!file||readOnly||previewImport.isPending} onClick={()=>void validateImport()} data-testid="button-preview-employee-import">{previewImport.isPending?'Validando…':'Validar arquivo'}</button></div>
       {importPreview&&<div className="summary-list" data-testid="employee-import-preview"><div className="summary-item"><strong>{importPreview.newCount}</strong><small>Novos</small></div><div className="summary-item"><strong>{importPreview.updatedCount}</strong><small>Atualizações</small></div><div className="summary-item"><strong>{importPreview.skippedCount}</strong><small>Duplicados</small></div><div className="summary-item"><strong>{importPreview.errorCount}</strong><small>Com erro</small></div><button className="button" disabled={readOnly||importEmployees.isPending} onClick={()=>void confirmImport()}>{importEmployees.isPending?'Importando…':'Confirmar importação'}</button><button className="button secondary" onClick={()=>setImportPreview(null)}>Cancelar</button></div>}
     </section>
-    <div className="toolbar"><p><strong>Cadastros retornados</strong> · {rows.length} registro(s)</p><div className="tools"><Search size={15} color="#8a9991"/><input className="search" placeholder="Nome, matrícula ou CPF" value={search} onChange={e=>setSearch(e.target.value)} data-testid="search-employees"/></div></div>
-    {query.isError?<ErrorState onRetry={()=>void query.refetch()}/>:query.isLoading?<LoadingTable/>:rows.length?<DataTable headers={['Matrícula','Servidor','Cargo','Carga horária','Acumula','E-mail','Ações']}><>{rows.map(row=><tr key={row.id} data-testid={`employee-row-${row.id}`}><td className="mono">{row.matricula}</td><td><div className="person"><span className="person-mark">{initials(row.name)}</span>{row.name}</div><small style={{color:'#8b9690',marginLeft:37}}>{row.cpf}</small></td><td>{row.cargo||'—'}</td><td>{row.carga_horaria} h</td><td>{row.acumula?<Pill tone="success">Sim</Pill>:<Pill>Não</Pill>}</td><td>{row.email||'—'}</td><td><div className="row-actions"><button className="text-action" disabled={readOnly} onClick={()=>openEdit(row)} data-testid={`button-edit-employee-${row.id}`}><Pencil size={13}/> Editar</button><button className="text-action" disabled={readOnly} onClick={()=>void deleteRow(row)} data-testid={`button-delete-employee-${row.id}`}><Trash2 size={13}/> Desativar</button></div></td></tr>)}</></DataTable>:<Empty icon={Users} title="Nenhum servidor cadastrado" copy="A base da demonstração está vazia. Cadastre um registro sintético ou importe uma planilha autorizada."/>}
+    <div className="toolbar"><p><strong>Cadastros retornados</strong> · {rows.length} registro(s)</p><div className="tools"><label style={{display:'flex',alignItems:'center',gap:8}}><input type="checkbox" checked={showInactive} onChange={e=>{setShowInactive(e.target.checked);setPage(0);}} data-testid="checkbox-show-inactive"/>Mostrar inativos</label><Search size={15} color="#8a9991"/><input className="search" placeholder="Nome, matrícula ou CPF" value={search} onChange={e=>setSearch(e.target.value)} data-testid="search-employees"/></div></div>
+    <div className="toolbar" style={{marginTop:8}}><p>Página {page+1} de {Math.max(1,Math.ceil((query.data?.total??rows.length)/limit))} — {query.data?.total ?? rows.length} registro(s)</p><div className="tools"><button className="button secondary" disabled={page<=0} onClick={()=>setPage(p=>Math.max(0,p-1))} data-testid="button-employees-prev">Anterior</button><button className="button secondary" disabled={(page+1)*limit>=(query.data?.total??rows.length)} onClick={()=>setPage(p=>p+1)} data-testid="button-employees-next">Próxima</button></div></div>
+    {query.isError?<ErrorState onRetry={()=>void query.refetch()}/>:query.isLoading?<LoadingTable/>:rows.length?<DataTable headers={['Matrícula','Servidor','Cargo','Carga horária','Acumula','E-mail','Ações']}><>{rows.map(row=><tr key={row.id} data-testid={`employee-row-${row.id}`} className={(row as any).active===false ? 'row-inactive' : undefined}><td className="mono">{row.matricula}</td><td><div className="person"><span className="person-mark">{initials(row.name)}</span>{row.name}{(row as any).active===false && <Pill tone="warning">Inativo</Pill>}</div><small style={{color:'#8b9690',marginLeft:37}}>{row.cpf}</small></td><td>{row.cargo||'—'}</td><td>{row.carga_horaria} h</td><td>{row.acumula?<Pill tone="success">Sim</Pill>:<Pill>Não</Pill>}</td><td>{row.email||'—'}</td><td><div className="row-actions">{(row as any).active===false ? <button className="text-action" disabled={readOnly||reactivate.isPending} onClick={()=>void reactivateRow(row)} data-testid={`button-reactivate-employee-${row.id}`}><Check size={13}/> Reativar</button> : <><button className="text-action" disabled={readOnly} onClick={()=>openEdit(row)} data-testid={`button-edit-employee-${row.id}`}><Pencil size={13}/> Editar</button><button className="text-action" disabled={readOnly} onClick={()=>void deleteRow(row)} data-testid={`button-delete-employee-${row.id}`}><Trash2 size={13}/> Desativar</button></>}</div></td></tr>)}</></DataTable>:<Empty icon={Users} title="Nenhum servidor cadastrado" copy="A base da demonstração está vazia. Cadastre um registro sintético ou importe uma planilha autorizada."/>}
     {editing!==false&&<Modal title={editing?'Editar cadastro':'Novo servidor'} intro="As informações serão enviadas à API e não são armazenadas localmente." onClose={()=>setEditing(false)}><form onSubmit={save}><div className="form-grid"><label className="field span-2">Nome completo<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} data-testid="input-employee-name"/></label><label className="field">Matrícula<input required value={form.matricula} onChange={e=>setForm({...form,matricula:e.target.value})} data-testid="input-employee-matricula"/></label><label className="field">CPF{editing&&<small> deixe em branco para manter o CPF já salvo</small>}<input value={form.cpf} onChange={e=>setForm({...form,cpf:e.target.value})} data-testid="input-employee-cpf"/></label><label className="field">E-mail<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} data-testid="input-employee-email"/></label><label className="field">Cargo<input value={form.cargo} onChange={e=>setForm({...form,cargo:e.target.value})} data-testid="input-employee-role"/></label><label className="field">Carga horária<input type="number" min="1" max="100" value={form.workloadHours} onChange={e=>setForm({...form,workloadHours:e.target.value})} data-testid="input-employee-hours"/></label><label className="field" style={{display:'flex',alignItems:'center',gap:8,paddingTop:20}}><input type="checkbox" checked={form.accumulatesRole} onChange={e=>setForm({...form,accumulatesRole:e.target.checked})} data-testid="input-employee-accumulates"/>Acumula cargo</label></div><div className="modal-actions"><button type="button" className="button secondary" onClick={()=>setEditing(false)}>Cancelar</button><button className="button" disabled={readOnly||create.isPending||update.isPending} data-testid="button-save-employee">Salvar cadastro</button></div></form></Modal>}
   </div>;
 }

@@ -9,5 +9,6 @@
 export type DispatchBatchResultResultsItem = {
   id: number;
   status: string;
-  message: string;
+  message?: string;
+  reason?: string;
 };

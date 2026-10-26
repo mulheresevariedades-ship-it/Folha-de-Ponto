@@ -308,3 +308,45 @@ A suíte também cobre a leitura de PDF digitalizado de ponta a ponta
 primeira execução (cerca de 4 MB). Sem internet o teste é ignorado com aviso
 — o restante da suíte continua válido. Para desligá-lo de propósito:
 `PONTO_OCR_TEST=0`.
+## Política de Arquivos e Versionamento
+
+### Arquivos `_OLD_`
+
+Quando uma folha de ponto é reenviada com `replaceDuplicates=true`, o arquivo anterior (corrente) é renomeado para o padrão:
+
+```
+NomeServidor-AAAA-MM_OLD_AAAAMMDD-HHMMSS.pdf
+```
+
+- **Quando é criado:** ao substituir uma folha duplicada (mesmo servidor + competência + fingerprint).
+- **Nomenclatura:** `<nome>-<competência>_OLD_<timestamp>.pdf` (timestamp no formato AAAAMMDD-HHMMSS).
+- **Finalidade:** preservação da versão anterior para auditoria e rastreabilidade.
+- **Retenção:** arquivos `_OLD_` **não são apagados automaticamente**. A política futura de retenção poderá incluir limpeza periódica (ex.: remover `_OLD_` com mais de 90 dias) ou arquivamento em storage frio. Atualmente, a responsabilidade de limpeza é manual.
+
+### `uploads/sources/`
+
+Diretório usado para armazenar os PDFs originais enviados pelos usuários antes do processamento.
+
+- **Finalidade:** manter a fonte original para reprocessamento, auditoria e reextração de dados.
+- **Uso:** cada PDF enviado é salvo em `uploads/sources/` com nome estável (baseado em fingerprint quando identificado, ou nome genérico quando não identificado).
+- **Política atual de retenção:** arquivos são mantidos indefinidamente. Não há limpeza automática. A remoção manual deve considerar impacto em auditoria e possibilidade de reprocessamento.
+
+### Modo Portable
+
+O modo portable (`dist-portable`) empacota:
+
+- Runtime Node.js embutido
+- Backend (API server)
+- Frontend (ponto-digital)
+- Banco PGlite (arquivo local)
+- OCR (Tesseract + modelos `por`/`eng`)
+- PDFium (WASM para rasterização JBIG2/JPX/CCITT)
+
+**Como gerar:**
+
+```bash
+pnpm --filter @workspace/api-server run build
+# Em seguida, executar o script de empacotamento portable
+```
+
+**Como executar:** basta executar o launcher do pacote `dist-portable`. Não requer Node, pnpm, npm, VS Code ou internet. O banco PGlite é criado automaticamente no diretório de dados do usuário.

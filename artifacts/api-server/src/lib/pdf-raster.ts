@@ -31,6 +31,7 @@ import {
 	PDFStream,
 	type PDFObject,
 } from "pdf-lib";
+import { PDFiumLibrary, type PDFiumDocument, type PDFiumPage } from "@hyzyla/pdfium";
 import { deflateSync, inflateSync } from "node:zlib";
 import { pageContentStreams, tokenizeContentStream, type Token } from "./pdf-text";
 
@@ -44,6 +45,21 @@ export type PageRaster = {
 	height: number;
 	/** Resolução efetiva da imagem entregue ao OCR. */
 	dpi: number;
+};
+
+/** Por que a página não pôde virar imagem. */
+export type PageRasterFailureReason =
+	| "sem-imagem"
+	| "formato-imagem-nao-suportado"
+	| "pdf-invalido"
+	| "pagina-inexistente"
+	| "renderizacao-falhou";
+
+export type PageRasterResult = {
+	raster: PageRaster | null;
+	reason: PageRasterFailureReason | null;
+	/** Filtros de imagem encontrados (ex.: /JBIG2Decode), quando aplicável. */
+	filters: string[];
 };
 
 /** Resolução usada quando não dá para aproveitar a resolução da imagem. */
@@ -102,6 +118,32 @@ function filterNames(dict: PDFDict): string[] {
 			.filter((name) => name.length > 0);
 	}
 	return [];
+}
+
+/**
+ * Filtros das imagens declaradas nos recursos da página.
+ *
+ * Serve para distinguir "página sem imagem" (folha vetorial) de "página com
+ * imagem que o decodificador JavaScript não entende" (JBIG2, JPX, CCITT).
+ * Nesse segundo caso o PDFium entra como renderizador de segurança.
+ */
+function pageImageFilters(
+	context: PDFDocument["context"],
+	page: ReturnType<PDFDocument["getPages"]>[number],
+): string[] {
+	const filters = new Set<string>();
+	const resources = page.node.Resources();
+	if (!resources) return [];
+	const xobjects = resources.lookupMaybe(PDFName.of("XObject"), PDFDict);
+	if (!xobjects) return [];
+	for (const [, reference] of xobjects.entries()) {
+		const resolved = resolve(context, reference);
+		if (!(resolved instanceof PDFRawStream) && !(resolved instanceof PDFStream)) continue;
+		const subtype = resolved.dict.lookupMaybe(PDFName.of("Subtype"), PDFName);
+		if (subtype?.asString() !== "/Image") continue;
+		for (const filter of filterNames(resolved.dict)) filters.add(filter);
+	}
+	return [...filters];
 }
 
 /* ------------------------------------------------------------------ *
@@ -896,14 +938,85 @@ function composePage(
  * API
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ * PDFium (WASM) — renderizador de segurança para formatos de imagem que
+ * o decodificador JavaScript não cobre (JBIG2, JPX/JPEG 2000 e CCITT).
+ * O pacote é embarcado com a aplicação: não exige Poppler nem instalação
+ * externa no computador do operador.
+ * ------------------------------------------------------------------ */
+
+const PDFIUM_DPI = 180;
+let pdfiumLibrary: Promise<PDFiumLibrary> | null = null;
+
+async function loadPdfium(): Promise<PDFiumLibrary> {
+	if (!pdfiumLibrary) {
+		pdfiumLibrary = PDFiumLibrary.init().catch((error) => {
+			// Uma falha de inicialização não pode envenenar o processo: a próxima
+			// página tenta carregar o WASM novamente.
+			pdfiumLibrary = null;
+			throw error;
+		});
+	}
+	return pdfiumLibrary;
+}
+
+/** Compõe o RGBA do PDFium sobre papel branco e codifica em PNG. */
+function rgbaToPng(data: Uint8Array, width: number, height: number): Buffer {
+	const rgb = new Uint8Array(width * height * 3);
+	for (let source = 0, target = 0; source < data.length; source += 4, target += 3) {
+		const alpha = data[source + 3] / 255;
+		const background = 255 * (1 - alpha);
+		rgb[target] = Math.round(data[source] * alpha + background);
+		rgb[target + 1] = Math.round(data[source + 1] * alpha + background);
+		rgb[target + 2] = Math.round(data[source + 2] * alpha + background);
+	}
+	return encodePng({ width, height, channels: 3, data: rgb });
+}
+
 /**
- * Imagem da página, pronta para o OCR.
+ * Renderiza a página inteira com o PDFium.
  *
- * Devolve `null` quando a página não tem imagem aproveitável (folha vetorial,
- * por exemplo) — nesse caso o chamador pode tentar o `pdftoppm` ou enviar a
- * página para a conferência manual.
+ * Devolve `null` quando o PDFium não conseguiu abrir/renderizar a página — o
+ * chamador então registra o motivo específico e manda a folha para revisão.
  */
-export async function extractPageRaster(buffer: Buffer, pageNumber: number): Promise<PageRaster | null> {
+async function renderWithPdfium(buffer: Buffer, pageNumber: number): Promise<PageRaster | null> {
+	let document: PDFiumDocument | null = null;
+	let page: PDFiumPage | null = null;
+	try {
+		const library = await loadPdfium();
+		document = await library.loadDocument(buffer);
+		page = document.getPage(pageNumber - 1);
+		const rendered = await page.render({ scale: PDFIUM_DPI / 72 });
+		if (!rendered.width || !rendered.height || rendered.data.length < rendered.width * rendered.height * 4) return null;
+		return {
+			bytes: rgbaToPng(rendered.data, rendered.width, rendered.height),
+			format: "png",
+			width: rendered.width,
+			height: rendered.height,
+			dpi: PDFIUM_DPI,
+		};
+	} catch {
+		return null;
+	} finally {
+		try {
+			page?.close();
+		} catch {
+			// A página pode já ter sido liberada por destroy().
+		}
+		document?.destroy();
+	}
+}
+
+/**
+ * Imagem da página, com o motivo quando não foi possível produzi-la.
+ *
+ * A leitura em JavaScript puro continua sendo a primeira tentativa (é rápida e
+ * preserva a resolução nativa de scanners JPEG). O PDFium só é acionado quando
+ * há imagem na página e essa leitura falhou — por exemplo, JBIG2. Páginas
+ * puramente vetoriais continuam devolvendo `sem-imagem`, sem renderização
+ * desnecessária.
+ */
+export async function extractPageRasterDetailed(buffer: Buffer, pageNumber: number): Promise<PageRasterResult> {
 	let document: PDFDocument;
 	try {
 		document = await PDFDocument.load(buffer, {
@@ -912,49 +1025,79 @@ export async function extractPageRaster(buffer: Buffer, pageNumber: number): Pro
 			throwOnInvalidObject: false,
 		});
 	} catch {
-		return null;
+		return { raster: null, reason: "pdf-invalido", filters: [] };
 	}
 	const page = document.getPages()[pageNumber - 1];
-	if (!page) return null;
+	if (!page) return { raster: null, reason: "pagina-inexistente", filters: [] };
 
-	let placements: Placement[];
+	let filters: string[] = [];
+	let placements: Placement[] = [];
 	try {
+		filters = pageImageFilters(document.context, page);
 		placements = placedImages(document.context, page);
 	} catch {
-		return null;
-	}
-	if (!placements.length) return null;
-
-	const size = page.getSize();
-	const rotation = page.getRotation().angle;
-	const swap = rotation === 90 || rotation === 270;
-	const pageWidth = swap ? size.height : size.width;
-	const pageHeight = swap ? size.width : size.height;
-
-	// Caso comum: a página é uma única imagem JPEG que cobre o papel.
-	// Os bytes vão intactos: sem recompressão e sem perda de qualidade.
-	const dominant = placements.reduce((best, placement) =>
-		placement.width * placement.height > best.width * best.height ? placement : best,
-	);
-	const coverage = (dominant.width * dominant.height) / Math.max(1, pageWidth * pageHeight);
-	if (dominant.asset.jpeg && placements.length === 1 && coverage >= FULL_PAGE_COVERAGE) {
-		const native = dominant.asset.width / (dominant.width / 72);
-		return {
-			bytes: dominant.asset.jpeg,
-			format: "jpeg",
-			width: dominant.asset.width,
-			height: dominant.asset.height,
-			dpi: Math.min(MAX_DPI, Math.max(MIN_DPI, Math.round(native))),
-		};
+		filters = [];
+		placements = [];
 	}
 
-	const composed = composePage(placements, pageWidth, pageHeight);
-	if (!composed) return null;
+	const success = (raster: PageRaster): PageRasterResult => ({ raster, reason: null, filters });
+
+	if (placements.length) {
+		const size = page.getSize();
+		const rotation = page.getRotation().angle;
+		const swap = rotation === 90 || rotation === 270;
+		const pageWidth = swap ? size.height : size.width;
+		const pageHeight = swap ? size.width : size.height;
+
+		// Caso comum: a página é uma única imagem JPEG que cobre o papel.
+		// Os bytes vão intactos: sem recompressão e sem perda de qualidade.
+		const dominant = placements.reduce((best, placement) =>
+			placement.width * placement.height > best.width * best.height ? placement : best,
+		);
+		const coverage = (dominant.width * dominant.height) / Math.max(1, pageWidth * pageHeight);
+		if (dominant.asset.jpeg && placements.length === 1 && coverage >= FULL_PAGE_COVERAGE) {
+			const native = dominant.asset.width / (dominant.width / 72);
+			return success({
+				bytes: dominant.asset.jpeg,
+				format: "jpeg",
+				width: dominant.asset.width,
+				height: dominant.asset.height,
+				dpi: Math.min(MAX_DPI, Math.max(MIN_DPI, Math.round(native))),
+			});
+		}
+
+		const composed = composePage(placements, pageWidth, pageHeight);
+		if (composed) {
+			return success({
+				bytes: encodePng(composed.pixels),
+				format: "png",
+				width: composed.pixels.width,
+				height: composed.pixels.height,
+				dpi: composed.dpi,
+			});
+		}
+	}
+
+	// Sem imagem declarada: folha vetorial. Não há o que rasterizar.
+	if (!filters.length && !placements.length) {
+		return { raster: null, reason: "sem-imagem", filters };
+	}
+
+	const rendered = await renderWithPdfium(buffer, pageNumber);
+	if (rendered) return { raster: rendered, reason: null, filters };
 	return {
-		bytes: encodePng(composed.pixels),
-		format: "png",
-		width: composed.pixels.width,
-		height: composed.pixels.height,
-		dpi: composed.dpi,
+		raster: null,
+		reason: filters.length ? "formato-imagem-nao-suportado" : "renderizacao-falhou",
+		filters,
 	};
+}
+
+/**
+ * Imagem da página, pronta para o OCR.
+ *
+ * Mantém o contrato antigo (PageRaster | null). Para saber o motivo da falha e
+ * os filtros encontrados, use `extractPageRasterDetailed`.
+ */
+export async function extractPageRaster(buffer: Buffer, pageNumber: number): Promise<PageRaster | null> {
+	return (await extractPageRasterDetailed(buffer, pageNumber)).raster;
 }

@@ -8,4 +8,13 @@
 
 export type ListAuditParams = {
 q?: string;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };

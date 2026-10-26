@@ -15,4 +15,5 @@ export interface Employee {
   cargo: string;
   carga_horaria: number;
   acumula: boolean;
+  active: boolean;
 }

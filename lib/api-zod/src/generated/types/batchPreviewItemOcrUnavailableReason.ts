@@ -18,4 +18,5 @@ export const BatchPreviewItemOcrUnavailableReason = {
   'tempo-limite': 'tempo-limite',
   'motor-indisponivel': 'motor-indisponivel',
   'leitura-falhou': 'leitura-falhou',
+  'formato-imagem-nao-suportado': 'formato-imagem-nao-suportado',
 } as const;

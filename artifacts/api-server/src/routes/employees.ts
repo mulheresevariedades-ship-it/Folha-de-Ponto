@@ -1,4 +1,4 @@
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, count, eq, ilike, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
@@ -45,6 +45,7 @@ function toApiEmployee(employee: typeof employees.$inferSelect) {
 		cargo: employee.cargo,
 		carga_horaria: employee.workloadHours,
 		acumula: employee.accumulatesRole,
+		active: employee.active,
 	};
 }
 
@@ -162,21 +163,32 @@ router.get("/employees", async (req, res, next): Promise<void> => {
 		const query = safeString(req.query.q);
 		const digits = normalizeCpf(query);
 		const cpfExactHash = digits.length === 11 ? cpfHash(digits) : null;
-		const predicate = query
-			? or(
-					ilike(employees.name, `%${query}%`),
-					ilike(employees.matricula, `%${query}%`),
-					ilike(employees.email, `%${query}%`),
-					digits.length > 0 ? ilike(employees.cpfLastDigits, `%${digits.slice(-2)}%`) : undefined,
-					cpfExactHash ? eq(employees.cpfSearchHash, cpfExactHash) : undefined,
-				)
+		const includeInactive = ["1", "true", "sim", "yes"].includes(safeString(req.query.includeInactive).toLowerCase());
+		const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 200));
+		const offset = Math.max(0, Number(req.query.offset) || 0);
+		const searchPredicate = query
+			? digits.length === 11 && cpfExactHash
+				? eq(employees.cpfSearchHash, cpfExactHash)
+				: or(
+						ilike(employees.name, `%${query}%`),
+						ilike(employees.matricula, `%${query}%`),
+						ilike(employees.email, `%${query}%`),
+					)
 			: undefined;
+		const predicate = includeInactive
+			? searchPredicate
+			: searchPredicate
+				? and(eq(employees.active, true), searchPredicate)
+				: eq(employees.active, true);
+		const [countRow] = await db.select({ total: count() }).from(employees).where(predicate);
 		const results = await db
 			.select()
 			.from(employees)
-			.where(predicate ? and(eq(employees.active, true), predicate) : eq(employees.active, true))
-			.orderBy(employees.name);
-		res.json(results.map(toApiEmployee));
+			.where(predicate)
+			.orderBy(employees.name)
+			.limit(limit)
+			.offset(offset);
+		res.json({ items: results.map(toApiEmployee), total: Number(countRow?.total ?? 0), limit, offset });
 	} catch (error) {
 		next(error);
 	}
@@ -306,6 +318,36 @@ router.delete("/employees/:id", async (req, res, next): Promise<void> => {
 		await recordAudit("servidor_desativado", "employee", String(id), removed);
 		res.status(204).end();
 	} catch (error) {
+		next(error);
+	}
+});
+
+router.post("/employees/:id/reactivate", async (req, res, next): Promise<void> => {
+	try {
+		const id = Number(req.params.id);
+		if (!Number.isInteger(id) || id < 1) {
+			res.status(400).json({ message: "Identificador inválido." });
+			return;
+		}
+		const [reactivated] = await db
+			.update(employees)
+			.set({ active: true, updatedAt: new Date() })
+			.where(and(eq(employees.id, id), eq(employees.active, false)))
+			.returning();
+		if (!reactivated) {
+			res.status(404).json({ message: "Servidor inativo não encontrado." });
+			return;
+		}
+		await recordAudit("servidor_reativado", "employee", String(id), {
+			name: reactivated.name,
+			matricula: reactivated.matricula,
+		});
+		res.json(toApiEmployee(reactivated));
+	} catch (error) {
+		if (isUniqueViolation(error)) {
+			res.status(409).json({ message: "Já existe um servidor ativo com essa matrícula." });
+			return;
+		}
 		next(error);
 	}
 });

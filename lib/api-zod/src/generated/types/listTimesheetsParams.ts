@@ -10,4 +10,13 @@ export type ListTimesheetsParams = {
 competency?: string;
 status?: string;
 q?: string;
+/**
+ * @minimum 1
+ * @maximum 1000
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };

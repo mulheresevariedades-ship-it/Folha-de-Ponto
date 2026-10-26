@@ -28,6 +28,11 @@ export interface BatchPreviewItem {
      * @nullable
      */
   ocrUnavailableReason: BatchPreviewItemOcrUnavailableReason;
+  /**
+     * Detalhe técnico da falha (ex.: filtro /JBIG2Decode)
+     * @nullable
+     */
+  ocrUnavailableDetail: string | null;
   duplicate: boolean;
   duplicateInUpload: boolean;
   /** @nullable */

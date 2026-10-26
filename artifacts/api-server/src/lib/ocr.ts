@@ -43,7 +43,9 @@ export type OcrFailureReason =
 	| "modelo-indisponivel"
 	| "tempo-limite"
 	| "motor-indisponivel"
-	| "leitura-falhou";
+	| "leitura-falhou"
+	/** A página tem imagem, mas o formato do fluxo não pôde ser rasterizado. */
+	| "formato-imagem-nao-suportado";
 
 /** Erro do OCR com o motivo da falha. */
 export class OcrError extends Error {
@@ -245,6 +247,36 @@ function resolveCachePath(): string {
 
 let activeWorker: Worker | null = null;
 let activeKey = "";
+let idleTimer: NodeJS.Timeout | null = null;
+
+/** Tempo de ociosidade antes de liberar o worker (padrão: 2 min). */
+function ocrIdleMs(): number {
+	const value = Number(process.env.PONTO_OCR_IDLE_MS);
+	return Number.isFinite(value) && value >= 0 ? value : 120_000;
+}
+
+function cancelIdleTermination(): void {
+	if (idleTimer) {
+		clearTimeout(idleTimer);
+		idleTimer = null;
+	}
+}
+
+/**
+ * Mantém o worker aquecido entre lotes. O encerramento só acontece após um
+ * período sem uso, evitando pagar a inicialização do tesseract a cada arquivo
+ * sem deixar um processo filho vivo para sempre.
+ */
+function scheduleIdleTermination(): void {
+	cancelIdleTermination();
+	const delay = ocrIdleMs();
+	if (!activeWorker || delay <= 0) return;
+	idleTimer = setTimeout(() => {
+		void terminateOcr();
+	}, delay);
+	// Não impede o processo de encerrar (testes, CLI, modo portátil).
+	idleTimer.unref?.();
+}
 
 /** Última falha do OCR nesta instância (para o diagnóstico da API). */
 let lastFailure: { reason: OcrFailureReason; message: string; at: string } | null = null;
@@ -263,6 +295,7 @@ function classifyFailure(error: unknown): OcrError {
 async function ensureWorker(deadline: number): Promise<Worker> {
 	const { langPath, languages } = resolveLanguageAssets();
 	const key = `${langPath ?? "cdn"}|${languages.join("+")}`;
+	cancelIdleTermination();
 	if (activeWorker && activeKey === key) return activeWorker;
 	if (activeWorker) {
 		await activeWorker.terminate().catch(() => undefined);
@@ -324,6 +357,7 @@ export async function recognizeImage(image: Buffer): Promise<OcrOutcome> {
 			"leitura da imagem",
 		);
 		const confidence = result.data.confidence;
+		scheduleIdleTermination();
 		return {
 			text: result.data.text ?? "",
 			confidence: Number.isFinite(confidence) ? Math.round(confidence) : 0,
@@ -348,6 +382,7 @@ export async function recognizeImage(image: Buffer): Promise<OcrOutcome> {
 
 /** Encerra o worker de OCR (usado no fim de cada lote). */
 export async function terminateOcr(): Promise<void> {
+	cancelIdleTermination();
 	if (!activeWorker) return;
 	const worker = activeWorker;
 	activeWorker = null;

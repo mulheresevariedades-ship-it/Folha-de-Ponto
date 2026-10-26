@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import { createHash, randomUUID } from "node:crypto";
@@ -21,7 +21,8 @@ import {
 import { assertPdfUpload } from "../lib/file-validation";
 import { extractPdfPageTexts } from "../lib/pdf-text";
 import { readPageText, type PageTextResult } from "../lib/pdf-page-text";
-import { recognizeImage, terminateOcr } from "../lib/ocr";
+import { extractPageRasterDetailed } from "../lib/pdf-raster";
+import { recognizeImage } from "../lib/ocr";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -44,6 +45,7 @@ type AnalysisEntry = {
 	sourceFilename: string;
 	sourceBuffer: Buffer;
 	sourceHash: string;
+	sourceFingerprint: string;
 	fileIndex: number;
 	pageNumber: number;
 	pageBuffer: Buffer;
@@ -62,6 +64,7 @@ type AnalysisEntry = {
 	ocrApplied: boolean;
 	ocrUnavailable: boolean;
 	ocrUnavailableReason: string | null;
+	ocrUnavailableDetail: string | null;
 	ocrLowConfidence: boolean;
 };
 type AnalysisError = { sourceFilename: string; pageNumber?: number; message: string };
@@ -123,7 +126,10 @@ async function makeOldKey(archiveKey: string, store: ArchiveStore): Promise<stri
 /** Official destination: Folhas_AAAA-MM/Nome_do_servidor-AAAA-MM.pdf */
 function officialArchiveKey(entry: AnalysisEntry): string {
 	const displayName = entry.employee?.name || entry.name;
-	const fileHash = createHash("sha256").update(entry.pageBuffer).digest("hex");
+	// Para páginas não identificadas, o hash do buffer da página mudava a cada
+	// reprocessamento. O fingerprint (PDF de origem + página) é estável e evita
+	// arquivos duplicados com nomes diferentes.
+	const fileHash = createHash("sha256").update(entry.sourceFingerprint).digest("hex");
 	const fileName = officialTimesheetFileName({
 		name: displayName,
 		competency: entry.competency,
@@ -152,7 +158,10 @@ async function extractPageText(
 		pageNumber,
 		fileBuffer,
 		embeddedText,
-		tools: { ocr: { recognize: recognizeImage } },
+		tools: {
+			ocr: { recognize: recognizeImage },
+			extractRasterDetailed: extractPageRasterDetailed,
+		},
 	});
 }
 
@@ -210,12 +219,14 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 
 	const activeEmployees = await db.select().from(employees).where(eq(employees.active, true));
 	const knownSheets = await db
-		.select({ employeeId: timesheets.employeeId, personKey: timesheets.personCompetencyKey, competency: timesheets.competency })
+		.select({ employeeId: timesheets.employeeId, personKey: timesheets.personCompetencyKey, competency: timesheets.competency, sourceFingerprint: timesheets.sourceFingerprint })
 		.from(timesheets);
 	const existingKeys = new Set<string>();
+	const existingFingerprints = new Set<string>();
 	for (const sheet of knownSheets) {
 		if (sheet.personKey) existingKeys.add(`${sheet.personKey}|${sheet.competency}`);
 		if (sheet.employeeId) existingKeys.add(`employee:${sheet.employeeId}|${sheet.competency}`);
+		if (sheet.sourceFingerprint) existingFingerprints.add(sheet.sourceFingerprint);
 	}
 
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ponto-batch-"));
@@ -242,6 +253,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 					const [copied] = await target.copyPages(source.document, [pageNumber - 1]);
 					target.addPage(copied);
 					const pageBuffer = Buffer.from(await target.save());
+					const sourceFingerprint = `${source.hash}|${pageNumber}`;
 					const extracted = await extractPageText(sourcePath, pageNumber, source.file.buffer, embeddedTexts[pageNumber - 1] ?? "");
 					const text = extracted.text;
 					const detectedMatricula = matriculaFromContent(text);
@@ -259,15 +271,15 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 						? `employee:${employee.id}`
 						: name
 							? `name:${createHash("sha256").update(normalizeSearch(name)).digest("hex")}`
-							: `page:${createHash("sha256").update(pageBuffer).digest("hex")}`;
+							: `page:${createHash("sha256").update(sourceFingerprint).digest("hex")}`;
 					const duplicateKey = competency ? `${personKey}|${competency}` : "";
 					const duplicateInUpload = Boolean(duplicateKey && seenInUpload.has(duplicateKey));
 					if (duplicateKey) seenInUpload.add(duplicateKey);
-					const alreadyArchived = Boolean(duplicateKey && existingKeys.has(duplicateKey));
-					const confidence =
-						text.length === 0
-							? 0
-							: Math.min(
+					const alreadyByFingerprint = existingFingerprints.has(sourceFingerprint);
+					const alreadyArchived = Boolean((duplicateKey && existingKeys.has(duplicateKey)) || alreadyByFingerprint);
+					const confidence = text.length === 0
+						? 0
+						: Math.min(
 									98,
 									Math.max(
 										20,
@@ -282,6 +294,7 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 						sourceFilename: source.file.originalname,
 						sourceBuffer: source.file.buffer,
 						sourceHash: source.hash,
+						sourceFingerprint,
 						fileIndex,
 						pageNumber,
 						pageBuffer,
@@ -295,11 +308,12 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 						personKey,
 						duplicate: alreadyArchived || duplicateInUpload,
 						duplicateInUpload,
-						duplicateReason: alreadyArchived ? "já arquivada para esta pessoa e competência" : duplicateInUpload ? "repetida dentro do próprio lote" : null,
+						duplicateReason: alreadyByFingerprint ? "mesma página já arquivada (mesmo PDF e página)" : alreadyArchived ? "já arquivada para esta pessoa e competência" : duplicateInUpload ? "repetida dentro do próprio lote" : null,
 						needsReview: !employee || !competencyDetected || confidence < 85 || extracted.ocrUnavailable || extracted.lowConfidence,
 						ocrApplied: extracted.ocrApplied,
 						ocrUnavailable: extracted.ocrUnavailable,
 						ocrUnavailableReason: extracted.ocrUnavailableReason,
+						ocrUnavailableDetail: extracted.ocrUnavailableDetail,
 						ocrLowConfidence: extracted.lowConfidence,
 					});
 					pages += 1;
@@ -318,7 +332,6 @@ async function analyzeFiles(files: UploadedFile[], fallbackCompetency: string) {
 		}
 		return { entries, errors, fileResults };
 	} finally {
-		await terminateOcr();
 		await fs.rm(tempDir, { recursive: true, force: true });
 	}
 }
@@ -344,6 +357,7 @@ function toPreview(entries: AnalysisEntry[], errors: AnalysisError[] = [], fileR
 			ocrApplied: entry.ocrApplied,
 			ocrUnavailable: entry.ocrUnavailable,
 			ocrUnavailableReason: entry.ocrUnavailableReason,
+			ocrUnavailableDetail: entry.ocrUnavailableDetail,
 		})),
 		newCount: entries.filter((entry) => !entry.duplicate).length,
 		duplicateCount,
@@ -365,6 +379,8 @@ function ocrReasonText(reason: string | null): string {
 			return "motor de OCR indisponível";
 		case "leitura-falhou":
 			return "leitura da imagem falhou";
+		case "formato-imagem-nao-suportado":
+			return "formato de imagem não suportado para rasterização";
 		default:
 			return "motivo desconhecido";
 	}
@@ -388,21 +404,83 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 		eq(timesheets.competency, entry.competency),
 		entry.employee ? eq(timesheets.employeeId, entry.employee.id) : eq(timesheets.personCompetencyKey, entry.personKey),
 	);
-	const [existing] = await db.select().from(timesheets).where(criteria).limit(1);
-	if (existing && !replaceDuplicates) return "skipped";
+	const [existingByKey] = await db.select().from(timesheets).where(criteria).limit(1);
+	const [existingByFingerprint] = entry.sourceFingerprint
+		? await db.select().from(timesheets).where(eq(timesheets.sourceFingerprint, entry.sourceFingerprint)).limit(1)
+		: [null];
+	const existingSheet = existingByFingerprint ?? existingByKey;
+	if (existingSheet && !replaceDuplicates) return "skipped";
 
 	const store = archiveStore();
 	const archiveKey = officialArchiveKey(entry);
 	const changes: FileChange[] = [];
-	try {
-		if (existing?.originalFilePath) {
-			const previous = toArchiveKey(existing.originalFilePath);
-			if (previous && previous !== archiveKey && (await store.exists(previous))) {
-				const backupPath = await makeOldKey(archiveKey, store);
-				await store.move(previous, backupPath);
-				changes.push({ target: previous, backupPath, restorePath: previous });
+
+	if (existingSheet && replaceDuplicates) {
+		const target = existingSheet;
+		try {
+			if (target.originalFilePath) {
+				const previous = toArchiveKey(target.originalFilePath);
+				if (previous && previous !== archiveKey && (await store.exists(previous))) {
+					const backupPath = await makeOldKey(archiveKey, store);
+					await store.move(previous, backupPath);
+					changes.push({ target: previous, backupPath, restorePath: previous });
+				}
 			}
+			if (await store.exists(archiveKey)) {
+				const backupPath = await makeOldKey(archiveKey, store);
+				await store.move(archiveKey, backupPath);
+				changes.push({ target: archiveKey, backupPath, restorePath: archiveKey });
+			}
+			await store.write(archiveKey, entry.pageBuffer);
+		} catch (error) {
+			await restoreChanges(store, changes);
+			throw error;
 		}
+
+		const status: (typeof timesheets.$inferInsert)["status"] = entry.ocrUnavailable
+			? "ocr_indisponivel"
+			: entry.needsReview
+				? "revisao"
+				: "reconhecida";
+		const note = entry.needsReview
+			? entry.ocrUnavailable
+				? `OCR indisponível nesta página (${ocrReasonText(entry.ocrUnavailableReason)}${entry.ocrUnavailableDetail ? ` — ${entry.ocrUnavailableDetail}` : ""}); confira os dados manualmente.`
+				: entry.ocrLowConfidence
+					? "Leitura por OCR com confiança baixa; confirme nome, matrícula e competência."
+					: "Confirme nome, matrícula e competência antes de arquivar."
+			: null;
+		try {
+			await db.transaction(async (tx) => {
+				const values = {
+					batchId,
+					employeeId: entry.employee?.id ?? target.employeeId ?? null,
+					competency: entry.competency,
+					personCompetencyKey: entry.personKey ?? target.personCompetencyKey,
+					sourceFingerprint: entry.sourceFingerprint,
+					confidence: entry.confidence,
+					status,
+					statusLabel: statusLabels[status],
+					note,
+					extractedData: {
+						name: entry.name || (target.extractedData as any)?.name,
+						matricula: entry.matricula || (target.extractedData as any)?.matricula,
+						competencySource: entry.competencySource,
+					},
+					originalFilePath: archiveKey,
+					updatedAt: new Date(),
+				};
+				await tx.update(timesheets).set(values).where(eq(timesheets.id, target.id));
+			});
+		} catch (error) {
+			await store.remove(archiveKey);
+			await restoreChanges(store, changes);
+			throw error;
+		}
+		return "updated";
+	}
+
+	// Create new entry
+	try {
 		if (await store.exists(archiveKey)) {
 			const backupPath = await makeOldKey(archiveKey, store);
 			await store.move(archiveKey, backupPath);
@@ -421,7 +499,7 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 			: "reconhecida";
 	const note = entry.needsReview
 		? entry.ocrUnavailable
-			? `OCR indisponível nesta página (${ocrReasonText(entry.ocrUnavailableReason)}); confira os dados manualmente.`
+			? `OCR indisponível nesta página (${ocrReasonText(entry.ocrUnavailableReason)}${entry.ocrUnavailableDetail ? ` — ${entry.ocrUnavailableDetail}` : ""}); confira os dados manualmente.`
 			: entry.ocrLowConfidence
 				? "Leitura por OCR com confiança baixa; confirme nome, matrícula e competência."
 				: "Confirme nome, matrícula e competência antes de arquivar."
@@ -433,6 +511,7 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 				employeeId: entry.employee?.id ?? null,
 				competency: entry.competency,
 				personCompetencyKey: entry.personKey,
+				sourceFingerprint: entry.sourceFingerprint,
 				confidence: entry.confidence,
 				status,
 				statusLabel: statusLabels[status],
@@ -445,18 +524,14 @@ async function saveEntry(entry: AnalysisEntry, replaceDuplicates: boolean, batch
 				originalFilePath: archiveKey,
 				updatedAt: new Date(),
 			};
-			if (existing) {
-				await tx.update(timesheets).set(values).where(eq(timesheets.id, existing.id));
-			} else {
-				await tx.insert(timesheets).values({ ...values, reference: `F-${randomUUID().slice(0, 8).toUpperCase()}` });
-			}
+			await tx.insert(timesheets).values({ ...values, reference: `F-${randomUUID().slice(0, 8).toUpperCase()}` });
 		});
 	} catch (error) {
 		await store.remove(archiveKey);
 		await restoreChanges(store, changes);
 		throw error;
 	}
-	return existing ? "updated" : "created";
+	return "created";
 }
 
 type PersistOutcome =
@@ -605,7 +680,7 @@ router.post("/batches/preview", upload.array("files", 10), async (req, res): Pro
 		const files = readFiles(req);
 		const fallbackCompetency = String(req.body.fallbackCompetency ?? "").trim();
 		if (fallbackCompetency && !isValidCompetency(fallbackCompetency)) {
-			res.status(400).json({ message: "Competência de fallback inválida. Use AAAAMM." });
+			res.status(400).json({ message: "Competência de fallback inválida. Use AAAA-MM." });
 			return;
 		}
 		const analysis = await serializePdfWork(() => analyzeFiles(files, fallbackCompetency));
@@ -622,7 +697,7 @@ router.post("/batches", upload.array("files", 10), async (req, res, next): Promi
 		const replaceDuplicates = isTrue(req.body.replaceDuplicates);
 		const confirmFallback = isTrue(req.body.confirmFallback);
 		if (fallbackCompetency && !isValidCompetency(fallbackCompetency)) {
-			res.status(400).json({ message: "Competência de fallback inválida. Use AAAAMM." });
+			res.status(400).json({ message: "Competência de fallback inválida. Use AAAA-MM." });
 			return;
 		}
 		const analysis = await serializePdfWork(() => analyzeFiles(files, fallbackCompetency));
