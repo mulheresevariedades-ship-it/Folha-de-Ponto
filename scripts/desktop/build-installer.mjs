@@ -260,8 +260,8 @@ function customNsisScript() {
 }
 
 async function main() {
-	if (process.platform !== "win32") {
-		throw new Error("O instalador do Ponto Digital é gerado no Windows (NSIS + runtime node.exe).");
+	if (process.platform !== "win32" && !unpackedOnly) {
+		throw new Error("O instalador NSIS do Ponto Digital é gerado no Windows; use `pnpm build:desktop` para gerar a versão descompactada neste sistema.");
 	}
 	// Uso interno: só prepara o script NSIS e sai (depuração do empacotamento).
 	if (process.argv.includes("--prepare-nsis")) {

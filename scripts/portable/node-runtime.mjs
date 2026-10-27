@@ -45,7 +45,10 @@ function copyRuntimeFiles(sourceExe, targetDir) {
 	if (existsSync(license)) copyFileSync(license, path.join(targetDir, "LICENSE"));
 }
 
-function runtimeVersion(exe) {
+function runtimeVersion(exe, expectedVersion = null) {
+	if (process.platform !== "win32" && exe.toLowerCase().endsWith(".exe")) {
+		return expectedVersion ? `v${expectedVersion}` : null;
+	}
 	try {
 		return execFileSync(exe, ["--version"], { encoding: "utf8", windowsHide: true }).trim();
 	} catch {
@@ -53,8 +56,8 @@ function runtimeVersion(exe) {
 	}
 }
 
-function assertUsable(exe, sourceLabel) {
-	const reported = runtimeVersion(exe);
+function assertUsable(exe, sourceLabel, expectedVersion = null) {
+	const reported = runtimeVersion(exe, expectedVersion);
 	if (!reported) {
 		throw new Error(`O runtime em ${sourceLabel} não executou (${exe}).`);
 	}
@@ -95,13 +98,18 @@ async function downloadRuntime(zipFile, version, log) {
 function extractNodeFromZip(zipFile, workDir, version) {
 	rmSync(workDir, { recursive: true, force: true });
 	mkdirSync(workDir, { recursive: true });
-	// Expand-Archive existe em qualquer Windows 10/11; o build é Windows-only
-	// porque o alvo é o instalador do Windows.
-	execFileSync(
-		"powershell",
-		["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `Expand-Archive -LiteralPath '${zipFile}' -DestinationPath '${workDir}' -Force`],
-		{ stdio: "ignore", windowsHide: true },
-	);
+	if (process.platform === "win32") {
+		// Expand-Archive existe em qualquer Windows 10/11.
+		execFileSync(
+			"powershell",
+			["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `Expand-Archive -LiteralPath '${zipFile}' -DestinationPath '${workDir}' -Force`],
+			{ stdio: "ignore", windowsHide: true },
+		);
+	} else {
+		// O pacote contém um runtime Windows, mas a preparação também pode rodar
+		// em Linux/macOS, onde PowerShell não está necessariamente instalado.
+		execFileSync("unzip", ["-q", "-o", zipFile, "-d", workDir], { stdio: "ignore" });
+	}
 	const folder = path.join(workDir, `node-v${version}-win-x64`);
 	const exe = path.join(folder, "node.exe");
 	if (!existsSync(exe)) throw new Error(`node.exe não encontrado dentro do zip em ${folder}.`);
@@ -114,7 +122,7 @@ function extractNodeFromZip(zipFile, workDir, version) {
 export async function ensureNodeRuntime({ targetDir, cacheDir, configured, log = console.log }) {
 	const exe = path.join(targetDir, "node.exe");
 	if (existsSync(exe)) {
-		const reported = runtimeVersion(exe);
+		const reported = runtimeVersion(exe, nodeRuntimeVersion());
 		if (reported) return { ok: true, source: "já presente no pacote", version: reported, executable: exe };
 		rmSync(exe, { force: true });
 	}
@@ -132,7 +140,7 @@ export async function ensureNodeRuntime({ targetDir, cacheDir, configured, log =
 		const zipFile = path.join(cacheDir, `node-v${version}-win-x64.zip`);
 		await downloadRuntime(zipFile, version, log);
 		const extracted = extractNodeFromZip(zipFile, path.join(cacheDir, "extract"), version);
-		const reported = assertUsable(extracted, "download oficial");
+		const reported = assertUsable(extracted, "download oficial", version);
 		copyRuntimeFiles(extracted, targetDir);
 		log(`   runtime embutido: Node ${reported}`);
 		return { ok: true, source: "nodejs.org", version: reported, executable: exe };
@@ -150,7 +158,7 @@ export async function ensureNodeRuntime({ targetDir, cacheDir, configured, log =
 /** Versão do runtime embutido no pacote, se já existir. */
 export function embeddedRuntimeVersion(targetDir) {
 	const exe = path.join(targetDir, "node.exe");
-	return existsSync(exe) ? runtimeVersion(exe) : null;
+	return existsSync(exe) ? runtimeVersion(exe, nodeRuntimeVersion()) : null;
 }
 
 /** Lê a versão do desktop/package.json (nome do artefato do instalador). */
