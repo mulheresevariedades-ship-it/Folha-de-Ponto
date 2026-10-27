@@ -56,6 +56,7 @@ function verifyPortable() {
 	fileOrFail(path.join(serverDir, "portable.mjs"), "Rode `pnpm build:portable` (ou o build do servidor).");
 	fileOrFail(path.join(serverDir, "front", "index.html"), "A interface compilada não foi copiada.");
 	fileOrFail(path.join(serverDir, "node_modules", "@electric-sql", "pglite", "package.json"), "Banco embutido (PGlite) ausente.");
+	fileOrFail(path.join(serverDir, "pdfium.wasm"), "WASM do PDFium ausente no pacote portátil.");
 
 	const migrations = path.join(serverDir, "migrations");
 	const sql = directoryHasFiles(migrations)

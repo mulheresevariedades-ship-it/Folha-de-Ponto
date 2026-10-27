@@ -220,6 +220,17 @@ describe("mensagens de erro", () => {
 		assert.ok(!detail.includes("    at "));
 	});
 
+	it("preserva a exceção em vez da versão do Node", () => {
+		const detail = friendlyDetail([
+			"Error: ENOENT: no such file or directory, open 'C:\\app\\pdfium.wasm'",
+			"    at Object.openSync (node:fs:596:3)",
+			"Node.js v24.12.0",
+		]);
+		assert.match(detail, /ENOENT/);
+		assert.ok(!detail.includes("Node.js"));
+		assert.ok(!detail.includes("C:\\app"));
+	});
+
 	it("launcherError carrega mensagem e detalhe", () => {
 		const error = launcherError("Mensagem", "Detalhe");
 		assert.equal(error.userMessage, "Mensagem");

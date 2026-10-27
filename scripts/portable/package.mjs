@@ -21,7 +21,7 @@
  * oficial para `node_modules/.cache/node-runtime` (ver `node-runtime.mjs`).
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync, copyFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchTessdata } from "./fetch-tessdata.mjs";
@@ -94,7 +94,32 @@ if (!existsSync(path.join(apiDist, "portable.mjs"))) {
 log("4/7 — copiando servidor, interface e migrações");
 // O bundle portátil importa os módulos `pino` empacotados ao lado, então copia
 // todo o `dist` em vez de apenas `portable.mjs`.
-copyDirectory(apiDist, path.join(serverDir));
+copyDirectory(apiDist, path.join(serverDir), { filter: (source) => !source.endsWith(".map") });
+
+const pinoWorkers = [
+	"thread-stream-worker.mjs",
+	"pino-worker.mjs",
+	"pino-file.mjs",
+	"pino-pretty.mjs",
+];
+for (const worker of pinoWorkers) {
+	if (!existsSync(path.join(serverDir, worker))) {
+		throw new Error(`Worker obrigatório do Pino não encontrado no pacote: server/${worker}`);
+	}
+}
+
+const portableBundle = readFileSync(path.join(serverDir, "portable.mjs"), "utf8");
+const runtimeWorkerResolver = "path.dirname(__bannerUrl.fileURLToPath(import.meta.url))";
+if (!portableBundle.includes(runtimeWorkerResolver) || !portableBundle.includes("thread-stream-worker.mjs")) {
+	throw new Error("O bundle portátil não resolve os workers do Pino relativamente a portable.mjs.");
+}
+const buildPaths = [
+	repoRoot,
+	path.join(repoRoot, "artifacts", "api-server", "dist"),
+].flatMap((value) => [value, value.replaceAll("\\", "\\\\"), value.replaceAll("\\", "/")]);
+if (buildPaths.some((buildPath) => portableBundle.includes(buildPath))) {
+	throw new Error("O bundle portátil contém um caminho absoluto do workspace de build.");
+}
 
 const frontDir = path.join(repoRoot, "artifacts", "ponto-digital", "dist", "public");
 if (!existsSync(path.join(frontDir, "index.html"))) {
@@ -121,6 +146,22 @@ const pgliteSource = path.join(
 	"pglite",
 );
 copyDirectory(realpathSync(pgliteSource), path.join(serverDir, "node_modules", "@electric-sql", "pglite"));
+
+// O bundle do PDFium resolve `pdfium.wasm` relativo a `portable.mjs`.
+const pdfiumWasm = path.join(
+	repoRoot,
+	"artifacts",
+	"api-server",
+	"node_modules",
+	"@hyzyla",
+	"pdfium",
+	"dist",
+	"pdfium.wasm",
+);
+if (!existsSync(pdfiumWasm)) {
+	throw new Error(`WASM do PDFium não encontrado: ${pdfiumWasm}`);
+}
+copyFileSync(pdfiumWasm, path.join(serverDir, "pdfium.wasm"));
 
 /**
  * Pacotes que o bundle portátil deixa de fora porque carregam arquivos de

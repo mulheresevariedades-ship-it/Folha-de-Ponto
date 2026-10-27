@@ -294,10 +294,11 @@ function friendlyDetail(lines) {
 		.map((line) => line.trim())
 		.filter((line) => line && !CLEAN_LINE.test(line))
 		.filter((line) => !/^at\s/.test(line))
+		.filter((line) => !/^Node\.js v\d/i.test(line))
 		.map((line) => line.replace(/(?:[A-Za-z]:\\|\/)[^\s"'`,;)]*/g, "…"))
-		.filter(Boolean)
-		.slice(-2);
-	return cleaned.join(" ");
+		.filter(Boolean);
+	const useful = cleaned.find((line) => /(?:Error:|ERR_[A-Z_]+|ENOENT|MODULE_NOT_FOUND)/i.test(line));
+	return (useful ?? cleaned[0] ?? "").slice(0, 300);
 }
 
 /**
@@ -372,20 +373,31 @@ async function ensureServer({
 	});
 
 	const tail = [];
-	const collect = (chunk) => {
-		for (const line of String(chunk).split(/\r?\n/)) {
-			if (!line.trim()) continue;
-			log.child(line);
-			tail.push(line);
-			if (tail.length > 40) tail.shift();
+	const streamBuffers = new Map([["stdout", ""], ["stderr", ""]]);
+	const recordLine = (line) => {
+		if (!line.trim()) return;
+		log.child(line);
+		tail.push(line);
+		if (tail.length > 200) tail.shift();
+	};
+	const collect = (stream, chunk) => {
+		const lines = `${streamBuffers.get(stream) ?? ""}${String(chunk)}`.split(/\r?\n/);
+		streamBuffers.set(stream, lines.pop() ?? "");
+		for (const line of lines) recordLine(line);
+	};
+	const flushOutput = () => {
+		for (const [stream, remainder] of streamBuffers) {
+			recordLine(remainder);
+			streamBuffers.set(stream, "");
 		}
 	};
-	child.stdout.on("data", collect);
-	child.stderr.on("data", collect);
+	child.stdout.on("data", (chunk) => collect("stdout", chunk));
+	child.stderr.on("data", (chunk) => collect("stderr", chunk));
 
 	let exited = false;
 	let exitCode = null;
-	child.on("exit", (code) => {
+	child.on("close", (code) => {
+		flushOutput();
 		exited = true;
 		exitCode = code;
 		log.info(`Backend encerrado (código ${code ?? "?"}).`);

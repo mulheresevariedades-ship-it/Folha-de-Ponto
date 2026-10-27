@@ -3,13 +3,39 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { copyOcrRuntime } from "./ocr-runtime.mjs";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+
+/** Remove o caminho de build que esbuild-plugin-pino injeta nos bundles. */
+async function makePinoWorkerPathsRuntimeRelative(distDir) {
+  const buildOutputDeclaration = `const outputDir = ${JSON.stringify(distDir)};`;
+  const runtimeOutputDeclaration = "const outputDir = path.dirname(__bannerUrl.fileURLToPath(import.meta.url));";
+  let patchedBundles = 0;
+
+  for (const name of await readdir(distDir)) {
+    if (!name.endsWith(".mjs")) continue;
+    const file = path.join(distDir, name);
+    const source = await readFile(file, "utf8");
+    if (!source.includes(buildOutputDeclaration)) continue;
+
+    const output = source.replaceAll(buildOutputDeclaration, runtimeOutputDeclaration);
+    if (output.includes(distDir) || output.includes(artifactDir)) {
+      throw new Error(`Caminho absoluto do build permaneceu em ${file}.`);
+    }
+    await writeFile(file, output, "utf8");
+    patchedBundles += 1;
+  }
+
+  const portableBundle = await readFile(path.join(distDir, "portable.mjs"), "utf8");
+  if (patchedBundles === 0 || !portableBundle.includes(runtimeOutputDeclaration)) {
+    throw new Error("Não foi possível tornar os caminhos dos workers Pino relativos ao bundle portátil.");
+  }
+}
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
@@ -163,6 +189,8 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  await makePinoWorkerPathsRuntimeRelative(distDir);
 
   /**
    * Runtime do OCR no pacote.
