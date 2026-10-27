@@ -6,8 +6,13 @@ name: Instalador Windows
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -51,8 +56,68 @@ jobs:
       - name: Testes da API
         run: pnpm --filter @workspace/api-server test
 
+      - name: Gerar pacote portable
+        run: pnpm build:portable
+
+      - name: Gerar desktop descompactado
+        run: node scripts/desktop/build-installer.mjs --skip-portable --dir
+
       - name: Gerar instalador
-        run: pnpm build:installer
+        run: node scripts/desktop/build-installer.mjs --skip-portable
+
+      - name: Conferir arquivos reais do pacote Electron
+        shell: pwsh
+        run: |
+          $portable = Join-Path $PWD "dist-desktop\win-unpacked\resources\portable"
+          $server = Join-Path $portable "server"
+          $required = @(
+            "runtime\node.exe",
+            "server\portable.mjs",
+            "server\front\index.html",
+            "server\migrations\0001_aspiring_peter_quill.sql",
+            "server\node_modules\@electric-sql\pglite\package.json",
+            "server\thread-stream-worker.mjs",
+            "server\pino-worker.mjs",
+            "server\pino-file.mjs",
+            "server\pino-pretty.mjs",
+            "server\pdfium.wasm",
+            "server\ocr\tessdata\por.traineddata.gz",
+            "server\ocr\tessdata\eng.traineddata.gz"
+          )
+          foreach ($relative in $required) {
+            $file = Join-Path $portable $relative
+            if (-not (Test-Path -LiteralPath $file)) { throw "Arquivo ausente no pacote final: $file" }
+          }
+          $workspace = $env:GITHUB_WORKSPACE
+          $bundles = Get-ChildItem -LiteralPath $server -Recurse -File -Include *.mjs,*.js
+          foreach ($bundle in $bundles) {
+            $source = Get-Content -LiteralPath $bundle.FullName -Raw
+            if ($source.Contains($workspace) -or $source.Contains($workspace.Replace('\', '\\'))) {
+              throw "Caminho do workspace encontrado no bundle: $($bundle.FullName)"
+            }
+          }
+          "Arquivos portable presentes; nenhum bundle contém o workspace $workspace."
+
+      - name: Criar ZIP portátil Windows
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
+          $source = Join-Path $PWD "dist-desktop\win-unpacked"
+          $zip = Join-Path $PWD "dist-installer\Ponto-Digital-Windows-v$version.zip"
+          if (-not (Test-Path (Join-Path $source "Ponto Digital.exe"))) { throw "EXE ausente no desktop descompactado" }
+          Compress-Archive -Path (Join-Path $source "*") -DestinationPath $zip -CompressionLevel Optimal -Force
+          if (-not (Test-Path $zip)) { throw "ZIP portátil não foi criado" }
+          "ZIP criado: $zip"
+
+      - name: Testar instalador e ZIP no Windows
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
+          $installer = "dist-installer/Ponto-Digital-Setup-$version.exe"
+          $zip = "dist-installer/Ponto-Digital-Windows-v$version.zip"
+          if (-not (Test-Path $installer)) { throw "Instalador não encontrado: $installer" }
+          if (-not (Test-Path $zip)) { throw "ZIP não encontrado: $zip" }
+          ./scripts/desktop/smoke-test-installed.ps1 -InstallerPath $installer -ZipPath $zip
 
       - name: Conferir instalador e assinatura
         shell: pwsh
@@ -70,12 +135,18 @@ jobs:
       - name: Publicar artefato
         uses: actions/upload-artifact@v4
         with:
-          name: Ponto-Digital-Setup
-          path: dist-installer/Ponto-Digital-Setup-*.exe
+          name: Ponto-Digital-Windows-v1.0.2
+          path: |
+            dist-installer/Ponto-Digital-Setup-*.exe
+            dist-installer/Ponto-Digital-Windows-v*.zip
           if-no-files-found: error
 
       - name: Anexar à release (tags v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist-installer/Ponto-Digital-Setup-*.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist-installer/Ponto-Digital-Setup-*.exe
+            dist-installer/Ponto-Digital-Windows-v*.zip

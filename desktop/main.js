@@ -169,6 +169,39 @@ function openMainWindow(port) {
 	mainWindow.webContents.on("did-fail-load", (_event, code, description) => {
 		log.error(`Falha ao carregar a interface (${code}): ${description}`);
 	});
+	mainWindow.webContents.on("console-message", (_event, level, message, line, source) => {
+		if (level >= 2) {
+			log.error(`Erro no renderer (${source}:${line}): ${message}`);
+		}
+	});
+	mainWindow.webContents.on("render-process-gone", (_event, details) => {
+		log.error(`Processo da interface encerrado: ${details.reason} (código ${details.exitCode}).`);
+	});
+	mainWindow.webContents.on("did-finish-load", () => {
+		void mainWindow?.webContents
+			.executeJavaScript(`new Promise((resolve) => {
+				const root = document.querySelector('#root');
+				if (!root || root.querySelector('.app')) return resolve(Boolean(root?.querySelector('.app')));
+				const observer = new MutationObserver(() => {
+					if (root.querySelector('.app')) {
+						observer.disconnect();
+						resolve(true);
+					}
+				});
+				observer.observe(root, { childList: true });
+				window.setTimeout(() => {
+					observer.disconnect();
+					resolve(Boolean(root.querySelector('.app')));
+				}, 10000);
+			})`)
+			.then((appMounted) => {
+				log.info(`Interface carregada; aplicação montada: ${appMounted ? 1 : 0}.`);
+				if (process.env.PONTO_DESKTOP_SMOKE_TEST === "1") {
+					setTimeout(() => mainWindow?.close(), 5000).unref();
+				}
+			})
+			.catch((error) => log.error(`Não foi possível verificar a interface: ${error.message}`));
+	});
 
 	mainWindow.once("ready-to-show", () => {
 		closeSplash();
@@ -180,7 +213,9 @@ function openMainWindow(port) {
 		app.quit();
 	});
 
-	void mainWindow.loadURL(`${origin}/`);
+	void mainWindow.loadURL(`${origin}/`).catch((error) => {
+		log.error(`Falha ao abrir a interface: ${error.message}`);
+	});
 	log.info(`Interface aberta em ${origin}/.`);
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@workspace/desktop",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "description": "Aplicativo desktop do Ponto Digital (Windows)",
   "author": "DIGEP - Universidade Federal",
